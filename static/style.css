@@ -20,6 +20,15 @@ body {
     backdrop-filter: blur(10px);
 }
 
+a {
+    color: #ffeb3b;
+    overflow-wrap: anywhere;
+}
+
+p {
+    overflow-wrap: anywhere;
+}
+
 label, input, button {
     font-size: 1em;
 }

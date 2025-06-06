@@ -11,7 +11,14 @@ The application expects the following API credentials:
 - `TRAKT_ACCESS_TOKEN` – access token for Trakt.
 - `TRAKT_CLIENT_ID` – client ID for your Trakt application.
 
-If you don't already have the tokens, please see the next section on how to obtain them.
+If you don't already have the tokens, please see the next sections on how to obtain them.
+
+## Getting a Plex token
+
+1. Log in to <https://plex.tv> with your account.
+2. While still signed in, open <https://plex.tv/api/resources?includeHttps=1>.
+   The page shows an XML listing of your devices. Look for a `token` attribute on
+   one of the `<Device>` entries and copy its value.
 
 ## Getting Trakt API credentials
 

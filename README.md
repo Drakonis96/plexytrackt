@@ -11,7 +11,35 @@ The application expects the following API credentials:
 - `TRAKT_ACCESS_TOKEN` – access token for Trakt.
 - `TRAKT_CLIENT_ID` – client ID for your Trakt application.
 
-If you don't already have the tokens, please see the official Plex and Trakt documentation for generating them.
+If you don't already have the tokens, please see the next section on how to obtain them.
+
+## Getting Trakt API credentials
+
+1. Log in to your Trakt account and open <https://trakt.tv/oauth/applications>.
+2. Create a new application. Any name will work and you can use `urn:ietf:wg:oauth:2.0:oob` as the redirect URL.
+3. After saving the app you will see a **Client ID** and **Client Secret**. Keep them handy.
+4. Visit the following URL in your browser, replacing `YOUR_CLIENT_ID` with the value from step 3:
+
+   ```
+   https://trakt.tv/oauth/authorize?response_type=code&client_id=YOUR_CLIENT_ID&redirect_uri=urn:ietf:wg:oauth:2.0:oob
+   ```
+
+   Authorize the application and copy the code shown on the page.
+5. Exchange the code for an access token:
+
+   ```bash
+   curl -X POST https://api.trakt.tv/oauth/token \
+     -H "Content-Type: application/json" \
+     -d '{
+       "code": "YOUR_CODE",
+       "client_id": "YOUR_CLIENT_ID",
+       "client_secret": "YOUR_CLIENT_SECRET",
+       "redirect_uri": "urn:ietf:wg:oauth:2.0:oob",
+       "grant_type": "authorization_code"
+     }'
+   ```
+
+   The response contains an `access_token` that you can use together with the client ID.
 
 ## Running with Docker Compose
 

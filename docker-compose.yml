@@ -6,4 +6,9 @@ services:
       - "5000:5000"
     env_file:
       - .env
+    environment:
+      - PLEX_BASEURL=${PLEX_BASEURL}
+      - PLEX_TOKEN=${PLEX_TOKEN}
+      - TRAKT_ACCESS_TOKEN=${TRAKT_ACCESS_TOKEN}
+      - TRAKT_CLIENT_ID=${TRAKT_CLIENT_ID}
 

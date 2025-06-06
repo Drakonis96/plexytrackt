@@ -23,15 +23,16 @@ def get_plex_history(plex):
     movies = set()
     episodes = set()
     for entry in plex.history():
-        # Some versions of plexapi return partial objects without an ``item``
-        # attribute. Fall back to fetching the full item by ``ratingKey`` when
-        # required so we don't raise an AttributeError.
+        # PlexAPI >= 4.13 no longer exposes ``item`` on history entries. When
+        # key fields like title/year are missing we reload the entry using the
+        # ``source`` helper (falls back to ``fetchItem``) so we don't raise an
+        # AttributeError.
         if entry.type == 'movie':
             title = getattr(entry, 'title', None)
             year = getattr(entry, 'year', None)
             if title is None or year is None:
                 try:
-                    item = plex.fetchItem(entry.ratingKey)
+                    item = entry.source() or plex.fetchItem(entry.ratingKey)
                     title = item.title
                     year = item.year
                 except Exception as exc:
@@ -46,7 +47,7 @@ def get_plex_history(plex):
             show = getattr(entry, 'grandparentTitle', None)
             if None in (season, number, show):
                 try:
-                    item = plex.fetchItem(entry.ratingKey)
+                    item = entry.source() or plex.fetchItem(entry.ratingKey)
                     season = item.seasonNumber
                     number = item.index
                     show = item.grandparentTitle

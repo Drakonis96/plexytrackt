@@ -11,6 +11,8 @@ The application expects the following API credentials:
 - `TRAKT_ACCESS_TOKEN` – access token for Trakt.
 - `TRAKT_CLIENT_ID` – client ID for your Trakt application.
 
+The application uses `plexapi` version 4.15 or newer (but below 5).
+
 If you don't already have the tokens, please see the next sections on how to obtain them.
 
 ## Getting a Plex token

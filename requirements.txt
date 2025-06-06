@@ -1,5 +1,5 @@
 Flask
 requests
 APScheduler
-plexapi
+plexapi>=4.15,<5
 

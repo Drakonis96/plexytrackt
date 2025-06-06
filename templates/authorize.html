@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Authorize Trakt</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="container">
+    <h1>Trakt Authorization</h1>
+    <p>Visit <a href="{{ auth_url }}" target="_blank">{{ auth_url }}</a> and authorize the application.</p>
+    <p>Then enter the code provided by Trakt:</p>
+    <form method="post">
+        <input type="text" name="code" placeholder="Authorization code">
+        <button type="submit">Submit</button>
+    </form>
+</div>
+</body>
+</html>

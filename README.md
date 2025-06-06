@@ -10,6 +10,8 @@ The application expects the following API credentials:
 - `PLEX_TOKEN` – your Plex authentication token.
 - `TRAKT_ACCESS_TOKEN` – access token for Trakt.
 - `TRAKT_CLIENT_ID` – client ID for your Trakt application.
+- `TRAKT_REFRESH_TOKEN` – refresh token returned when obtaining the access token.
+- `TRAKT_CLIENT_SECRET` – client secret from your Trakt application.
 
 The application uses `plexapi` version 4.15 or newer (but below 5).
 
@@ -48,18 +50,20 @@ If you don't already have the tokens, please see the next sections on how to obt
      }'
    ```
 
-   The response contains an `access_token` that you can use together with the client ID.
+   The response contains an `access_token` and `refresh_token`. Save both along with the client ID and client secret.
 
 ## Running with Docker Compose
 
 1. Clone this repository.
-2. Create a `.env` file in the project root and define the four variables listed above. Example:
+2. Create a `.env` file in the project root and define the variables listed above. Example:
 
 ```
 PLEX_BASEURL=http://localhost:32400
 PLEX_TOKEN=YOUR_PLEX_TOKEN
 TRAKT_ACCESS_TOKEN=YOUR_TRAKT_TOKEN
 TRAKT_CLIENT_ID=YOUR_TRAKT_CLIENT_ID
+TRAKT_REFRESH_TOKEN=YOUR_TRAKT_REFRESH_TOKEN
+TRAKT_CLIENT_SECRET=YOUR_TRAKT_CLIENT_SECRET
 ```
 
 3. Build and start the application using Docker Compose:

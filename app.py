@@ -18,6 +18,49 @@ app = Flask(__name__)
 SYNC_INTERVAL_MINUTES = 60
 scheduler = BackgroundScheduler()
 
+TRAKT_REDIRECT_URI = 'urn:ietf:wg:oauth:2.0:oob'
+
+
+def refresh_trakt_token():
+    """Refresh the Trakt access token using the stored refresh token."""
+    refresh_token = os.environ.get('TRAKT_REFRESH_TOKEN')
+    client_id = os.environ.get('TRAKT_CLIENT_ID')
+    client_secret = os.environ.get('TRAKT_CLIENT_SECRET')
+    if not all([refresh_token, client_id, client_secret]):
+        logger.error('Missing Trakt OAuth environment variables.')
+        return None
+    payload = {
+        'refresh_token': refresh_token,
+        'client_id': client_id,
+        'client_secret': client_secret,
+        'redirect_uri': TRAKT_REDIRECT_URI,
+        'grant_type': 'refresh_token',
+    }
+    try:
+        resp = requests.post('https://api.trakt.tv/oauth/token', json=payload)
+        resp.raise_for_status()
+    except Exception as exc:
+        logger.error('Failed to refresh Trakt token: %s', exc)
+        return None
+    data = resp.json()
+    os.environ['TRAKT_ACCESS_TOKEN'] = data['access_token']
+    os.environ['TRAKT_REFRESH_TOKEN'] = data.get('refresh_token', refresh_token)
+    logger.info('Trakt access token refreshed')
+    return data['access_token']
+
+
+def trakt_request(method, endpoint, headers, **kwargs):
+    """Make a request to Trakt, refreshing the token if needed."""
+    url = f'https://api.trakt.tv{endpoint}'
+    resp = requests.request(method, url, headers=headers, **kwargs)
+    if resp.status_code == 401:
+        new_token = refresh_trakt_token()
+        if new_token:
+            headers['Authorization'] = f'Bearer {new_token}'
+            resp = requests.request(method, url, headers=headers, **kwargs)
+    resp.raise_for_status()
+    return resp
+
 
 def get_plex_history(plex):
     """Return mapping of watched movies and episodes from Plex with timestamps."""
@@ -72,12 +115,12 @@ def get_trakt_history(headers):
     episodes = set()
     page = 1
     while True:
-        resp = requests.get(
-            f'https://api.trakt.tv/sync/history',
-            headers=headers,
-            params={'page': page, 'limit': 100}
+        resp = trakt_request(
+            'GET',
+            '/sync/history',
+            headers,
+            params={'page': page, 'limit': 100},
         )
-        resp.raise_for_status()
         data = resp.json()
         if not data:
             break
@@ -110,8 +153,7 @@ def update_trakt(headers, movies, episodes):
         payload['episodes'].append(ep_obj)
     if not payload['movies'] and not payload['episodes']:
         return
-    resp = requests.post('https://api.trakt.tv/sync/history', json=payload, headers=headers)
-    resp.raise_for_status()
+    trakt_request('POST', '/sync/history', headers, json=payload)
 
 
 def update_plex(plex, movies, episodes):
@@ -218,8 +260,7 @@ def test_connections():
         'trakt-api-key': trakt_client_id,
     }
     try:
-        resp = requests.get('https://api.trakt.tv/users/settings', headers=headers)
-        resp.raise_for_status()
+        trakt_request('GET', '/users/settings', headers)
         logger.info('Successfully connected to Trakt.')
     except Exception as exc:
         logger.error('Failed to connect to Trakt: %s', exc)

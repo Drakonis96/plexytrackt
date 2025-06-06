@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Plex Trakt Sync</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="container">
+    <h1>Plex/Trakt Sync</h1>
+    <form method="post">
+        <label for="minutes">Sync every (minutes):</label>
+        <input type="number" id="minutes" name="minutes" min="1" value="{{ minutes }}">
+        <button type="submit">Update</button>
+    </form>
+</div>
+</body>
+</html>

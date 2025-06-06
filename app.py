@@ -133,7 +133,10 @@ def get_plex_history(plex):
         watched_ts = getattr(entry, "viewedAt", None)
         watched_at = None
         if watched_ts:
-            watched_at = datetime.utcfromtimestamp(int(watched_ts)).isoformat() + "Z"
+            if isinstance(watched_ts, datetime):
+                watched_at = watched_ts.isoformat() + "Z"
+            else:
+                watched_at = datetime.utcfromtimestamp(int(watched_ts)).isoformat() + "Z"
         if entry.type == 'movie':
             title = getattr(entry, 'title', None)
             year = getattr(entry, 'year', None)

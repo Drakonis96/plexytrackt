@@ -16,6 +16,11 @@ def get_plex_history(plex):
     movies = set()
     episodes = set()
     for entry in plex.history():
+        # Debugging: inspect available attributes on each history entry
+        try:
+            print(vars(entry))
+        except Exception as exc:
+            print(f"Failed to inspect entry: {exc}")
         if entry.type == 'movie':
             try:
                 movies.add((entry.title, entry.year))

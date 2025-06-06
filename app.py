@@ -1,160 +1,212 @@
+#!/usr/bin/env python3
+"""
+PlexyTrackt – Sincroniza el historial visto de Plex con Trakt.
+
+• Compatible con PlexAPI ≥ 4.15  
+• Conversión segura de «viewedAt» (datetime, timestamp numérico o cadena)  
+• Manejo de películas sin año (year == None) para evitar errores 500 de Plex  
+• Sustituido `searchShows` (eliminado en PlexAPI ≥ 4.14) por búsqueda genérica libtype="show"
+"""
+
 import os
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
+from numbers import Number
+from typing import Dict, List, Optional, Set, Tuple
+
 import requests
 from flask import Flask, render_template, request, redirect, url_for
 from apscheduler.schedulers.background import BackgroundScheduler
 from plexapi.server import PlexServer
+from plexapi.exceptions import BadRequest
 
+# --------------------------------------------------------------------------- #
+# LOGGING
+# --------------------------------------------------------------------------- #
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
 logger = logging.getLogger(__name__)
 
+# --------------------------------------------------------------------------- #
+# FLASK + APSCHEDULER
+# --------------------------------------------------------------------------- #
 app = Flask(__name__)
 
-# default sync frequency in minutes
-SYNC_INTERVAL_MINUTES = 60
-
+SYNC_INTERVAL_MINUTES = 60           # frecuencia por defecto
 scheduler = BackgroundScheduler()
 
-TRAKT_REDIRECT_URI = 'urn:ietf:wg:oauth:2.0:oob'
-TOKEN_FILE = 'trakt_tokens.json'
+# --------------------------------------------------------------------------- #
+# CONSTANTES OAUTH TRAKT
+# --------------------------------------------------------------------------- #
+TRAKT_REDIRECT_URI = "urn:ietf:wg:oauth:2.0:oob"
+TOKEN_FILE = "trakt_tokens.json"
+
+# --------------------------------------------------------------------------- #
+# UTILIDADES
+# --------------------------------------------------------------------------- #
+def to_iso_z(value) -> Optional[str]:
+    """Convierte cualquier variante de «viewedAt» a ISO-8601 UTC (“…Z”)."""
+    if value is None:
+        return None
+
+    if isinstance(value, datetime):                       # datetime / pendulum / arrow
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+    if isinstance(value, Number):                        # int / float
+        return datetime.utcfromtimestamp(value).isoformat() + "Z"
+
+    if isinstance(value, str):                           # str
+        try:                                             # entero en texto
+            return datetime.utcfromtimestamp(int(value)).isoformat() + "Z"
+        except (TypeError, ValueError):
+            pass
+        try:                                             # ISO
+            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        except ValueError:
+            pass
+
+    logger.warning("viewedAt con formato no reconocido: %r (%s)", value, type(value))
+    return None
 
 
-def load_trakt_tokens():
-    """Load tokens from TOKEN_FILE into environment variables if needed."""
-    if os.environ.get('TRAKT_ACCESS_TOKEN') and os.environ.get('TRAKT_REFRESH_TOKEN'):
+# --------------------------------------------------------------------------- #
+# TOKENS TRAKT
+# --------------------------------------------------------------------------- #
+def load_trakt_tokens() -> None:
+    if os.environ.get("TRAKT_ACCESS_TOKEN") and os.environ.get("TRAKT_REFRESH_TOKEN"):
         return
     if os.path.exists(TOKEN_FILE):
         try:
-            with open(TOKEN_FILE, 'r') as f:
+            with open(TOKEN_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            if 'access_token' in data:
-                os.environ['TRAKT_ACCESS_TOKEN'] = data['access_token']
-            if 'refresh_token' in data:
-                os.environ['TRAKT_REFRESH_TOKEN'] = data['refresh_token']
-            logger.info('Loaded Trakt tokens from %s', TOKEN_FILE)
+            os.environ["TRAKT_ACCESS_TOKEN"] = data.get("access_token", "")
+            os.environ["TRAKT_REFRESH_TOKEN"] = data.get("refresh_token", "")
+            logger.info("Loaded Trakt tokens from %s", TOKEN_FILE)
         except Exception as exc:
-            logger.error('Failed to load Trakt tokens: %s', exc)
+            logger.error("Failed to load Trakt tokens: %s", exc)
 
 
-def save_trakt_tokens(access_token, refresh_token):
-    """Persist tokens to TOKEN_FILE."""
+def save_trakt_tokens(access_token: str, refresh_token: Optional[str]) -> None:
     try:
-        with open(TOKEN_FILE, 'w') as f:
-            json.dump({'access_token': access_token, 'refresh_token': refresh_token}, f)
-        logger.info('Saved Trakt tokens to %s', TOKEN_FILE)
+        with open(TOKEN_FILE, "w", encoding="utf-8") as f:
+            json.dump(
+                {"access_token": access_token, "refresh_token": refresh_token}, f, indent=2
+            )
+        logger.info("Saved Trakt tokens to %s", TOKEN_FILE)
     except Exception as exc:
-        logger.error('Failed to save Trakt tokens: %s', exc)
+        logger.error("Failed to save Trakt tokens: %s", exc)
 
 
-def exchange_code_for_tokens(code):
-    """Exchange an authorization code for Trakt tokens."""
-    client_id = os.environ.get('TRAKT_CLIENT_ID')
-    client_secret = os.environ.get('TRAKT_CLIENT_SECRET')
+def exchange_code_for_tokens(code: str) -> Optional[dict]:
+    client_id = os.environ.get("TRAKT_CLIENT_ID")
+    client_secret = os.environ.get("TRAKT_CLIENT_SECRET")
     if not all([code, client_id, client_secret]):
-        logger.error('Missing code or Trakt client credentials.')
+        logger.error("Missing code or Trakt client credentials.")
         return None
+
     payload = {
-        'code': code,
-        'client_id': client_id,
-        'client_secret': client_secret,
-        'redirect_uri': TRAKT_REDIRECT_URI,
-        'grant_type': 'authorization_code',
+        "code": code,
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "redirect_uri": TRAKT_REDIRECT_URI,
+        "grant_type": "authorization_code",
     }
     try:
-        resp = requests.post('https://api.trakt.tv/oauth/token', json=payload)
+        resp = requests.post("https://api.trakt.tv/oauth/token", json=payload, timeout=30)
         resp.raise_for_status()
     except Exception as exc:
-        logger.error('Failed to obtain Trakt tokens: %s', exc)
+        logger.error("Failed to obtain Trakt tokens: %s", exc)
         return None
+
     data = resp.json()
-    os.environ['TRAKT_ACCESS_TOKEN'] = data['access_token']
-    os.environ['TRAKT_REFRESH_TOKEN'] = data.get('refresh_token')
-    save_trakt_tokens(data['access_token'], data.get('refresh_token'))
-    logger.info('Trakt tokens obtained via authorization code')
+    os.environ["TRAKT_ACCESS_TOKEN"] = data["access_token"]
+    os.environ["TRAKT_REFRESH_TOKEN"] = data.get("refresh_token")
+    save_trakt_tokens(data["access_token"], data.get("refresh_token"))
+    logger.info("Trakt tokens obtained via authorization code")
     return data
 
 
-def refresh_trakt_token():
-    """Refresh the Trakt access token using the stored refresh token."""
-    refresh_token = os.environ.get('TRAKT_REFRESH_TOKEN')
-    client_id = os.environ.get('TRAKT_CLIENT_ID')
-    client_secret = os.environ.get('TRAKT_CLIENT_SECRET')
+def refresh_trakt_token() -> Optional[str]:
+    refresh_token = os.environ.get("TRAKT_REFRESH_TOKEN")
+    client_id = os.environ.get("TRAKT_CLIENT_ID")
+    client_secret = os.environ.get("TRAKT_CLIENT_SECRET")
     if not all([refresh_token, client_id, client_secret]):
-        logger.error('Missing Trakt OAuth environment variables.')
+        logger.error("Missing Trakt OAuth environment variables.")
         return None
+
     payload = {
-        'refresh_token': refresh_token,
-        'client_id': client_id,
-        'client_secret': client_secret,
-        'redirect_uri': TRAKT_REDIRECT_URI,
-        'grant_type': 'refresh_token',
+        "refresh_token": refresh_token,
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "redirect_uri": TRAKT_REDIRECT_URI,
+        "grant_type": "refresh_token",
     }
     try:
-        resp = requests.post('https://api.trakt.tv/oauth/token', json=payload)
+        resp = requests.post("https://api.trakt.tv/oauth/token", json=payload, timeout=30)
         resp.raise_for_status()
     except Exception as exc:
-        logger.error('Failed to refresh Trakt token: %s', exc)
+        logger.error("Failed to refresh Trakt token: %s", exc)
         return None
+
     data = resp.json()
-    os.environ['TRAKT_ACCESS_TOKEN'] = data['access_token']
-    os.environ['TRAKT_REFRESH_TOKEN'] = data.get('refresh_token', refresh_token)
-    save_trakt_tokens(os.environ['TRAKT_ACCESS_TOKEN'], os.environ['TRAKT_REFRESH_TOKEN'])
-    logger.info('Trakt access token refreshed')
-    return data['access_token']
+    os.environ["TRAKT_ACCESS_TOKEN"] = data["access_token"]
+    os.environ["TRAKT_REFRESH_TOKEN"] = data.get("refresh_token", refresh_token)
+    save_trakt_tokens(data["access_token"], os.environ["TRAKT_REFRESH_TOKEN"])
+    logger.info("Trakt access token refreshed")
+    return data["access_token"]
 
 
-def trakt_request(method, endpoint, headers, **kwargs):
-    """Make a request to Trakt, refreshing the token if needed."""
-    url = f'https://api.trakt.tv{endpoint}'
-    resp = requests.request(method, url, headers=headers, **kwargs)
-    if resp.status_code == 401:
+def trakt_request(method: str, endpoint: str, headers: dict, **kwargs) -> requests.Response:
+    url = f"https://api.trakt.tv{endpoint}"
+    resp = requests.request(method, url, headers=headers, timeout=30, **kwargs)
+    if resp.status_code == 401:                       # token expirado
         new_token = refresh_trakt_token()
         if new_token:
-            headers['Authorization'] = f'Bearer {new_token}'
-            resp = requests.request(method, url, headers=headers, **kwargs)
+            headers["Authorization"] = f"Bearer {new_token}"
+            resp = requests.request(method, url, headers=headers, timeout=30, **kwargs)
     resp.raise_for_status()
     return resp
 
 
-def get_plex_history(plex):
-    """Return mapping of watched movies and episodes from Plex with timestamps."""
-    movies = {}
-    episodes = {}
+# --------------------------------------------------------------------------- #
+# PLEX ↔ TRAKT
+# --------------------------------------------------------------------------- #
+def get_plex_history(
+    plex
+) -> Tuple[Dict[Tuple[str, Optional[int]], Optional[str]],
+           Dict[Tuple[str, str], Optional[str]]]:
+    movies: Dict[Tuple[str, Optional[int]], Optional[str]] = {}
+    episodes: Dict[Tuple[str, str], Optional[str]] = {}
+
+    logger.info("Fetching Plex history…")
     for entry in plex.history():
-        # PlexAPI >= 4.13 no longer exposes ``item`` on history entries. When
-        # key fields like title/year are missing we reload the entry using the
-        # ``source`` helper (falls back to ``fetchItem``) so we don't raise an
-        # AttributeError.
-        watched_ts = getattr(entry, "viewedAt", None)
-        watched_at = None
-        if watched_ts:
-            if isinstance(watched_ts, datetime):
-                watched_at = watched_ts.isoformat() + "Z"
-            else:
-                watched_at = datetime.utcfromtimestamp(int(watched_ts)).isoformat() + "Z"
-        if entry.type == 'movie':
-            title = getattr(entry, 'title', None)
-            year = getattr(entry, 'year', None)
+        watched_at = to_iso_z(getattr(entry, "viewedAt", None))
+
+        # Películas
+        if entry.type == "movie":
+            title = getattr(entry, "title", None)
+            year = getattr(entry, "year", None)
             if title is None or year is None:
                 try:
                     item = entry.source() or plex.fetchItem(entry.ratingKey)
                     title = item.title
                     year = item.year
                 except Exception as exc:
-                    logger.debug(
-                        "Failed to fetch movie %s from Plex: %s", entry.ratingKey, exc
-                    )
+                    logger.debug("Failed to fetch movie %s from Plex: %s", entry.ratingKey, exc)
                     continue
             movies[(title, year)] = watched_at
-        elif entry.type == 'episode':
-            season = getattr(entry, 'parentIndex', None)
-            number = getattr(entry, 'index', None)
-            show = getattr(entry, 'grandparentTitle', None)
+
+        # Episodios
+        elif entry.type == "episode":
+            season = getattr(entry, "parentIndex", None)
+            number = getattr(entry, "index", None)
+            show = getattr(entry, "grandparentTitle", None)
             if None in (season, number, show):
                 try:
                     item = entry.source() or plex.fetchItem(entry.ratingKey)
@@ -162,95 +214,136 @@ def get_plex_history(plex):
                     number = item.index
                     show = item.grandparentTitle
                 except Exception as exc:
-                    logger.debug(
-                        "Failed to fetch episode %s from Plex: %s", entry.ratingKey, exc
-                    )
+                    logger.debug("Failed to fetch episode %s from Plex: %s", entry.ratingKey, exc)
                     continue
             code = f"S{int(season):02d}E{int(number):02d}"
             episodes[(show, code)] = watched_at
+
     return movies, episodes
 
 
-def get_trakt_history(headers):
-    """Return sets of watched movies and episodes from Trakt."""
-    movies = set()
-    episodes = set()
+def get_trakt_history(
+    headers: dict,
+) -> Tuple[Set[Tuple[str, Optional[int]]], Set[Tuple[str, str]]]:
+    movies: Set[Tuple[str, Optional[int]]] = set()
+    episodes: Set[Tuple[str, str]] = set()
+
     page = 1
+    logger.info("Fetching Trakt history…")
     while True:
         resp = trakt_request(
-            'GET',
-            '/sync/history',
+            "GET",
+            "/sync/history",
             headers,
-            params={'page': page, 'limit': 100},
+            params={"page": page, "limit": 100},
         )
         data = resp.json()
         if not data:
             break
         for item in data:
-            if item['type'] == 'movie':
-                m = item['movie']
-                movies.add((m['title'], m['year']))
-            elif item['type'] == 'episode':
-                e = item['episode']
-                show = item['show']
-                episodes.add((show['title'], f"S{e['season']:02d}E{e['number']:02d}"))
+            if item["type"] == "movie":
+                m = item["movie"]
+                movies.add((m["title"], m["year"]))
+            elif item["type"] == "episode":
+                e = item["episode"]
+                show = item["show"]
+                episodes.add((show["title"], f"S{e['season']:02d}E{e['number']:02d}"))
         page += 1
+
     return movies, episodes
 
 
-def update_trakt(headers, movies, episodes):
-    """Send watched history to Trakt."""
-    payload = {'movies': [], 'episodes': []}
+def update_trakt(
+    headers: dict,
+    movies: List[Tuple[str, Optional[int], Optional[str]]],
+    episodes: List[Tuple[str, str, Optional[str]]],
+) -> None:
+    payload = {"movies": [], "episodes": []}
+
     for title, year, watched_at in movies:
-        movie_obj = {'title': title, 'year': year}
+        movie_obj = {"title": title}
+        if year is not None:
+            movie_obj["year"] = year
         if watched_at:
-            movie_obj['watched_at'] = watched_at
-        payload['movies'].append(movie_obj)
+            movie_obj["watched_at"] = watched_at
+        payload["movies"].append(movie_obj)
+
     for show, code, watched_at in episodes:
         season = int(code[1:3])
         number = int(code[4:6])
-        ep_obj = {'title': show, 'season': season, 'number': number}
+        ep_obj = {"title": show, "season": season, "number": number}
         if watched_at:
-            ep_obj['watched_at'] = watched_at
-        payload['episodes'].append(ep_obj)
-    if not payload['movies'] and not payload['episodes']:
+            ep_obj["watched_at"] = watched_at
+        payload["episodes"].append(ep_obj)
+
+    if not payload["movies"] and not payload["episodes"]:
+        logger.info("Nothing new to send to Trakt.")
         return
-    trakt_request('POST', '/sync/history', headers, json=payload)
+
+    trakt_request("POST", "/sync/history", headers, json=payload)
+    logger.info(
+        "Sent %d movies and %d episodes to Trakt",
+        len(payload["movies"]),
+        len(payload["episodes"]),
+    )
 
 
-def update_plex(plex, movies, episodes):
-    """Mark items as watched on Plex."""
+def update_plex(
+    plex,
+    movies: Set[Tuple[str, Optional[int]]],
+    episodes: Set[Tuple[str, str]],
+) -> None:
+    """Marca como vistos en Plex los ítems que figuran en Trakt pero no en Plex."""
+    # Películas
     for title, year in movies:
-        results = plex.library.search(title=title, year=year, libtype='movie')
-        for item in results:
-            item.markWatched()
+        try:
+            if year:
+                results = plex.library.search(title=title, year=year, libtype="movie")
+            else:
+                results = plex.library.search(title=title, libtype="movie")
+            for item in results:
+                item.markWatched()
+        except BadRequest as exc:
+            logger.warning("Plex search error for %s (%s): %s", title, year, exc)
+
+    # Episodios
     for show, code in episodes:
         season = int(code[1:3])
         number = int(code[4:6])
-        results = plex.library.searchShows(title=show)
-        for show_obj in results:
-            ep = show_obj.get_episode(season=season, episode=number)
-            if ep:
-                ep.markWatched()
+        try:
+            # searchShows eliminado → buscar como show genérico
+            series = plex.library.search(title=show, libtype="show")
+            for show_obj in series:
+                ep = show_obj.episode(season=season, episode=number)
+                if ep:
+                    ep.markWatched()
+        except BadRequest as exc:
+            logger.warning("Plex search error for %s %s: %s", show, code, exc)
 
 
+# --------------------------------------------------------------------------- #
+# TAREA SCHEDULER
+# --------------------------------------------------------------------------- #
 def sync():
-    logger.info('Starting synchronization job')
-    plex_baseurl = os.environ.get('PLEX_BASEURL')
-    plex_token = os.environ.get('PLEX_TOKEN')
-    trakt_token = os.environ.get('TRAKT_ACCESS_TOKEN')
-    trakt_client_id = os.environ.get('TRAKT_CLIENT_ID')
+    logger.info("Starting synchronization job")
+
+    plex_baseurl = os.environ.get("PLEX_BASEURL")
+    plex_token = os.environ.get("PLEX_TOKEN")
+    trakt_token = os.environ.get("TRAKT_ACCESS_TOKEN")
+    trakt_client_id = os.environ.get("TRAKT_CLIENT_ID")
+
     if not all([plex_baseurl, plex_token, trakt_token, trakt_client_id]):
-        logger.error('Missing environment variables for Plex or Trakt.')
+        logger.error("Missing environment variables for Plex or Trakt.")
         return
 
     plex = PlexServer(plex_baseurl, plex_token)
+
     headers = {
-        'Authorization': f'Bearer {trakt_token}',
-        'Content-Type': 'application/json',
-        'User-Agent': 'PlexyTrackt/1.0.0',
-        'trakt-api-version': '2',
-        'trakt-api-key': trakt_client_id,
+        "Authorization": f"Bearer {trakt_token}",
+        "Content-Type": "application/json",
+        "User-Agent": "PlexyTrackt/1.0.0",
+        "trakt-api-version": "2",
+        "trakt-api-key": trakt_client_id,
     }
 
     plex_movies, plex_episodes = get_plex_history(plex)
@@ -260,12 +353,12 @@ def sync():
     plex_episode_keys = set(plex_episodes.keys())
 
     logger.info(
-        'Plex history contains %d movies and %d episodes',
+        "Plex history:   %d movies, %d episodes",
         len(plex_movies),
         len(plex_episodes),
     )
     logger.info(
-        'Trakt history contains %d movies and %d episodes',
+        "Trakt history:  %d movies, %d episodes",
         len(trakt_movies),
         len(trakt_episodes),
     )
@@ -281,65 +374,76 @@ def sync():
 
     update_trakt(headers, new_movies, new_episodes)
     update_plex(plex, trakt_movies - plex_movie_keys, trakt_episodes - plex_episode_keys)
-    logger.info('Synchronization job finished')
+
+    logger.info("Synchronization job finished")
 
 
-@app.route('/', methods=['GET', 'POST'])
+# --------------------------------------------------------------------------- #
+# FLASK ROUTES
+# --------------------------------------------------------------------------- #
+@app.route("/", methods=["GET", "POST"])
 def index():
     global SYNC_INTERVAL_MINUTES
+
     load_trakt_tokens()
-    if not os.environ.get('TRAKT_ACCESS_TOKEN') or not os.environ.get('TRAKT_REFRESH_TOKEN'):
-        if request.method == 'POST':
-            code = request.form.get('code', '').strip()
-            if code:
-                data = exchange_code_for_tokens(code)
-                if data:
-                    start_scheduler()
-                    return redirect(url_for('index'))
+
+    # 1) Autorización inicial
+    if not os.environ.get("TRAKT_ACCESS_TOKEN") or not os.environ.get("TRAKT_REFRESH_TOKEN"):
+        if request.method == "POST":
+            code = request.form.get("code", "").strip()
+            if code and exchange_code_for_tokens(code):
+                start_scheduler()
+                return redirect(url_for("index"))
         auth_url = (
-            f"https://trakt.tv/oauth/authorize?response_type=code&client_id={os.environ.get('TRAKT_CLIENT_ID')}"
+            "https://trakt.tv/oauth/authorize"
+            f"?response_type=code&client_id={os.environ.get('TRAKT_CLIENT_ID')}"
             f"&redirect_uri={TRAKT_REDIRECT_URI}"
         )
-        return render_template('authorize.html', auth_url=auth_url)
-    if request.method == 'POST':
-        minutes = int(request.form.get('minutes', 60))
+        return render_template("authorize.html", auth_url=auth_url)
+
+    # 2) Cambiar intervalo
+    if request.method == "POST":
+        minutes = int(request.form.get("minutes", 60))
         SYNC_INTERVAL_MINUTES = minutes
         scheduler.remove_all_jobs()
-        scheduler.add_job(sync, 'interval', minutes=minutes, id='sync_job')
-        return redirect(url_for('index'))
-    return render_template('index.html', minutes=SYNC_INTERVAL_MINUTES)
+        scheduler.add_job(sync, "interval", minutes=minutes, id="sync_job")
+        return redirect(url_for("index"))
+
+    return render_template("index.html", minutes=SYNC_INTERVAL_MINUTES)
 
 
-def test_connections():
-    """Verify connectivity to Plex and Trakt before starting."""
-    plex_baseurl = os.environ.get('PLEX_BASEURL')
-    plex_token = os.environ.get('PLEX_TOKEN')
-    trakt_token = os.environ.get('TRAKT_ACCESS_TOKEN')
-    trakt_client_id = os.environ.get('TRAKT_CLIENT_ID')
+# --------------------------------------------------------------------------- #
+# ARRANQUE DEL SCHEDULER
+# --------------------------------------------------------------------------- #
+def test_connections() -> bool:
+    plex_baseurl = os.environ.get("PLEX_BASEURL")
+    plex_token = os.environ.get("PLEX_TOKEN")
+    trakt_token = os.environ.get("TRAKT_ACCESS_TOKEN")
+    trakt_client_id = os.environ.get("TRAKT_CLIENT_ID")
 
     if not all([plex_baseurl, plex_token, trakt_token, trakt_client_id]):
-        logger.error('Missing environment variables for Plex or Trakt.')
+        logger.error("Missing environment variables for Plex or Trakt.")
         return False
 
     try:
         PlexServer(plex_baseurl, plex_token).account()
-        logger.info('Successfully connected to Plex.')
+        logger.info("Successfully connected to Plex.")
     except Exception as exc:
-        logger.error('Failed to connect to Plex: %s', exc)
+        logger.error("Failed to connect to Plex: %s", exc)
         return False
 
     headers = {
-        'Authorization': f'Bearer {trakt_token}',
-        'Content-Type': 'application/json',
-        'User-Agent': 'PlexyTrackt/1.0.0',
-        'trakt-api-version': '2',
-        'trakt-api-key': trakt_client_id,
+        "Authorization": f"Bearer {trakt_token}",
+        "Content-Type": "application/json",
+        "User-Agent": "PlexyTrackt/1.0.0",
+        "trakt-api-version": "2",
+        "trakt-api-key": trakt_client_id,
     }
     try:
-        trakt_request('GET', '/users/settings', headers)
-        logger.info('Successfully connected to Trakt.')
+        trakt_request("GET", "/users/settings", headers)
+        logger.info("Successfully connected to Trakt.")
     except Exception as exc:
-        logger.error('Failed to connect to Trakt: %s', exc)
+        logger.error("Failed to connect to Trakt: %s", exc)
         return False
 
     return True
@@ -349,15 +453,18 @@ def start_scheduler():
     if scheduler.running:
         return
     if not test_connections():
-        logger.error('Connection test failed. Scheduler will not start.')
+        logger.error("Connection test failed. Scheduler will not start.")
         return
-    scheduler.add_job(sync, 'interval', minutes=SYNC_INTERVAL_MINUTES, id='sync_job')
+    scheduler.add_job(sync, "interval", minutes=SYNC_INTERVAL_MINUTES, id="sync_job")
     scheduler.start()
-    logger.info('Scheduler started with interval %d minutes', SYNC_INTERVAL_MINUTES)
+    logger.info("Scheduler started with interval %d minutes", SYNC_INTERVAL_MINUTES)
 
 
-if __name__ == '__main__':
-    logger.info('Starting PlexyTrackt application')
+# --------------------------------------------------------------------------- #
+# MAIN
+# --------------------------------------------------------------------------- #
+if __name__ == "__main__":
+    logger.info("Starting PlexyTrackt application")
     load_trakt_tokens()
     start_scheduler()
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host="0.0.0.0", port=5000)

@@ -1,5 +1,6 @@
 import os
 import logging
+from datetime import datetime
 import requests
 from flask import Flask, render_template, request, redirect, url_for
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -19,14 +20,18 @@ scheduler = BackgroundScheduler()
 
 
 def get_plex_history(plex):
-    """Return sets of watched movies and episodes from Plex."""
-    movies = set()
-    episodes = set()
+    """Return mapping of watched movies and episodes from Plex with timestamps."""
+    movies = {}
+    episodes = {}
     for entry in plex.history():
         # PlexAPI >= 4.13 no longer exposes ``item`` on history entries. When
         # key fields like title/year are missing we reload the entry using the
         # ``source`` helper (falls back to ``fetchItem``) so we don't raise an
         # AttributeError.
+        watched_ts = getattr(entry, "viewedAt", None)
+        watched_at = None
+        if watched_ts:
+            watched_at = datetime.utcfromtimestamp(int(watched_ts)).isoformat() + "Z"
         if entry.type == 'movie':
             title = getattr(entry, 'title', None)
             year = getattr(entry, 'year', None)
@@ -40,7 +45,7 @@ def get_plex_history(plex):
                         "Failed to fetch movie %s from Plex: %s", entry.ratingKey, exc
                     )
                     continue
-            movies.add((title, year))
+            movies[(title, year)] = watched_at
         elif entry.type == 'episode':
             season = getattr(entry, 'parentIndex', None)
             number = getattr(entry, 'index', None)
@@ -57,7 +62,7 @@ def get_plex_history(plex):
                     )
                     continue
             code = f"S{int(season):02d}E{int(number):02d}"
-            episodes.add((show, code))
+            episodes[(show, code)] = watched_at
     return movies, episodes
 
 
@@ -91,12 +96,18 @@ def get_trakt_history(headers):
 def update_trakt(headers, movies, episodes):
     """Send watched history to Trakt."""
     payload = {'movies': [], 'episodes': []}
-    for title, year in movies:
-        payload['movies'].append({'title': title, 'year': year})
-    for show, code in episodes:
+    for title, year, watched_at in movies:
+        movie_obj = {'title': title, 'year': year}
+        if watched_at:
+            movie_obj['watched_at'] = watched_at
+        payload['movies'].append(movie_obj)
+    for show, code, watched_at in episodes:
         season = int(code[1:3])
         number = int(code[4:6])
-        payload['episodes'].append({'title': show, 'season': season, 'number': number})
+        ep_obj = {'title': show, 'season': season, 'number': number}
+        if watched_at:
+            ep_obj['watched_at'] = watched_at
+        payload['episodes'].append(ep_obj)
     if not payload['movies'] and not payload['episodes']:
         return
     resp = requests.post('https://api.trakt.tv/sync/history', json=payload, headers=headers)
@@ -113,10 +124,10 @@ def update_plex(plex, movies, episodes):
         season = int(code[1:3])
         number = int(code[4:6])
         results = plex.library.searchShows(title=show)
-    for show_obj in results:
-        ep = show_obj.get_episode(season=season, episode=number)
-        if ep:
-            ep.markWatched()
+        for show_obj in results:
+            ep = show_obj.get_episode(season=season, episode=number)
+            if ep:
+                ep.markWatched()
 
 
 def sync():
@@ -133,12 +144,16 @@ def sync():
     headers = {
         'Authorization': f'Bearer {trakt_token}',
         'Content-Type': 'application/json',
+        'User-Agent': 'PlexyTrackt/1.0.0',
         'trakt-api-version': '2',
         'trakt-api-key': trakt_client_id,
     }
 
     plex_movies, plex_episodes = get_plex_history(plex)
     trakt_movies, trakt_episodes = get_trakt_history(headers)
+
+    plex_movie_keys = set(plex_movies.keys())
+    plex_episode_keys = set(plex_episodes.keys())
 
     logger.info(
         'Plex history contains %d movies and %d episodes',
@@ -151,8 +166,17 @@ def sync():
         len(trakt_episodes),
     )
 
-    update_trakt(headers, plex_movies - trakt_movies, plex_episodes - trakt_episodes)
-    update_plex(plex, trakt_movies - plex_movies, trakt_episodes - plex_episodes)
+    new_movies = [
+        (title, year, plex_movies[(title, year)])
+        for (title, year) in plex_movie_keys - trakt_movies
+    ]
+    new_episodes = [
+        (show, code, plex_episodes[(show, code)])
+        for (show, code) in plex_episode_keys - trakt_episodes
+    ]
+
+    update_trakt(headers, new_movies, new_episodes)
+    update_plex(plex, trakt_movies - plex_movie_keys, trakt_episodes - plex_episode_keys)
     logger.info('Synchronization job finished')
 
 
@@ -189,6 +213,7 @@ def test_connections():
     headers = {
         'Authorization': f'Bearer {trakt_token}',
         'Content-Type': 'application/json',
+        'User-Agent': 'PlexyTrackt/1.0.0',
         'trakt-api-version': '2',
         'trakt-api-key': trakt_client_id,
     }

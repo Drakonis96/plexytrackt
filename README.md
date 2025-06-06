@@ -50,7 +50,14 @@ If you don't already have the tokens, please see the next sections on how to obt
      }'
    ```
 
-   The response contains an `access_token` and `refresh_token`. Save both along with the client ID and client secret.
+   The response contains an `access_token` and `refresh_token`. Save both along
+   with the client ID and client secret.
+
+Once the application is running it will look for these tokens in the
+environment. If they are missing, PlexyTrackt shows a web page asking for the
+authorization code. Enter the code from the Trakt authorization page and the
+application will automatically exchange it for an access and refresh token and
+store them in `trakt_tokens.json` for future use.
 
 ## Running with Docker Compose
 

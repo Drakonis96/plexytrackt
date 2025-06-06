@@ -1,4 +1,5 @@
 import os
+import json
 import logging
 from datetime import datetime
 import requests
@@ -16,9 +17,66 @@ app = Flask(__name__)
 
 # default sync frequency in minutes
 SYNC_INTERVAL_MINUTES = 60
+
 scheduler = BackgroundScheduler()
 
 TRAKT_REDIRECT_URI = 'urn:ietf:wg:oauth:2.0:oob'
+TOKEN_FILE = 'trakt_tokens.json'
+
+
+def load_trakt_tokens():
+    """Load tokens from TOKEN_FILE into environment variables if needed."""
+    if os.environ.get('TRAKT_ACCESS_TOKEN') and os.environ.get('TRAKT_REFRESH_TOKEN'):
+        return
+    if os.path.exists(TOKEN_FILE):
+        try:
+            with open(TOKEN_FILE, 'r') as f:
+                data = json.load(f)
+            if 'access_token' in data:
+                os.environ['TRAKT_ACCESS_TOKEN'] = data['access_token']
+            if 'refresh_token' in data:
+                os.environ['TRAKT_REFRESH_TOKEN'] = data['refresh_token']
+            logger.info('Loaded Trakt tokens from %s', TOKEN_FILE)
+        except Exception as exc:
+            logger.error('Failed to load Trakt tokens: %s', exc)
+
+
+def save_trakt_tokens(access_token, refresh_token):
+    """Persist tokens to TOKEN_FILE."""
+    try:
+        with open(TOKEN_FILE, 'w') as f:
+            json.dump({'access_token': access_token, 'refresh_token': refresh_token}, f)
+        logger.info('Saved Trakt tokens to %s', TOKEN_FILE)
+    except Exception as exc:
+        logger.error('Failed to save Trakt tokens: %s', exc)
+
+
+def exchange_code_for_tokens(code):
+    """Exchange an authorization code for Trakt tokens."""
+    client_id = os.environ.get('TRAKT_CLIENT_ID')
+    client_secret = os.environ.get('TRAKT_CLIENT_SECRET')
+    if not all([code, client_id, client_secret]):
+        logger.error('Missing code or Trakt client credentials.')
+        return None
+    payload = {
+        'code': code,
+        'client_id': client_id,
+        'client_secret': client_secret,
+        'redirect_uri': TRAKT_REDIRECT_URI,
+        'grant_type': 'authorization_code',
+    }
+    try:
+        resp = requests.post('https://api.trakt.tv/oauth/token', json=payload)
+        resp.raise_for_status()
+    except Exception as exc:
+        logger.error('Failed to obtain Trakt tokens: %s', exc)
+        return None
+    data = resp.json()
+    os.environ['TRAKT_ACCESS_TOKEN'] = data['access_token']
+    os.environ['TRAKT_REFRESH_TOKEN'] = data.get('refresh_token')
+    save_trakt_tokens(data['access_token'], data.get('refresh_token'))
+    logger.info('Trakt tokens obtained via authorization code')
+    return data
 
 
 def refresh_trakt_token():
@@ -45,6 +103,7 @@ def refresh_trakt_token():
     data = resp.json()
     os.environ['TRAKT_ACCESS_TOKEN'] = data['access_token']
     os.environ['TRAKT_REFRESH_TOKEN'] = data.get('refresh_token', refresh_token)
+    save_trakt_tokens(os.environ['TRAKT_ACCESS_TOKEN'], os.environ['TRAKT_REFRESH_TOKEN'])
     logger.info('Trakt access token refreshed')
     return data['access_token']
 
@@ -225,6 +284,20 @@ def sync():
 @app.route('/', methods=['GET', 'POST'])
 def index():
     global SYNC_INTERVAL_MINUTES
+    load_trakt_tokens()
+    if not os.environ.get('TRAKT_ACCESS_TOKEN') or not os.environ.get('TRAKT_REFRESH_TOKEN'):
+        if request.method == 'POST':
+            code = request.form.get('code', '').strip()
+            if code:
+                data = exchange_code_for_tokens(code)
+                if data:
+                    start_scheduler()
+                    return redirect(url_for('index'))
+        auth_url = (
+            f"https://trakt.tv/oauth/authorize?response_type=code&client_id={os.environ.get('TRAKT_CLIENT_ID')}"
+            f"&redirect_uri={TRAKT_REDIRECT_URI}"
+        )
+        return render_template('authorize.html', auth_url=auth_url)
     if request.method == 'POST':
         minutes = int(request.form.get('minutes', 60))
         SYNC_INTERVAL_MINUTES = minutes
@@ -270,6 +343,8 @@ def test_connections():
 
 
 def start_scheduler():
+    if scheduler.running:
+        return
     if not test_connections():
         logger.error('Connection test failed. Scheduler will not start.')
         return
@@ -280,5 +355,6 @@ def start_scheduler():
 
 if __name__ == '__main__':
     logger.info('Starting PlexyTrackt application')
+    load_trakt_tokens()
     start_scheduler()
     app.run(host='0.0.0.0', port=5000)

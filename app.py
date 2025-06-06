@@ -23,27 +23,39 @@ def get_plex_history(plex):
     movies = set()
     episodes = set()
     for entry in plex.history():
-        try:
-            logger.debug(vars(entry))
-        except Exception as exc:
-            logger.debug(f"Failed to inspect entry: {exc}")
+        # Some versions of plexapi return partial objects without an ``item``
+        # attribute. Fall back to fetching the full item by ``ratingKey`` when
+        # required so we don't raise an AttributeError.
         if entry.type == 'movie':
-            try:
-                movies.add((entry.title, entry.year))
-            except AttributeError:
-                item = plex.fetchItem(entry.ratingKey)
-                movies.add((item.title, item.year))
+            title = getattr(entry, 'title', None)
+            year = getattr(entry, 'year', None)
+            if title is None or year is None:
+                try:
+                    item = plex.fetchItem(entry.ratingKey)
+                    title = item.title
+                    year = item.year
+                except Exception as exc:
+                    logger.debug(
+                        "Failed to fetch movie %s from Plex: %s", entry.ratingKey, exc
+                    )
+                    continue
+            movies.add((title, year))
         elif entry.type == 'episode':
-            try:
-                season = int(entry.parentIndex)
-                number = int(entry.index)
-                show = entry.grandparentTitle
-            except AttributeError:
-                item = plex.fetchItem(entry.ratingKey)
-                season = item.seasonNumber
-                number = item.index
-                show = item.grandparentTitle
-            code = f"S{season:02d}E{number:02d}"
+            season = getattr(entry, 'parentIndex', None)
+            number = getattr(entry, 'index', None)
+            show = getattr(entry, 'grandparentTitle', None)
+            if None in (season, number, show):
+                try:
+                    item = plex.fetchItem(entry.ratingKey)
+                    season = item.seasonNumber
+                    number = item.index
+                    show = item.grandparentTitle
+                except Exception as exc:
+                    logger.debug(
+                        "Failed to fetch episode %s from Plex: %s", entry.ratingKey, exc
+                    )
+                    continue
+            code = f"S{int(season):02d}E{int(number):02d}"
             episodes.add((show, code))
     return movies, episodes
 

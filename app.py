@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-PlexyTrackt – Sincroniza el historial visto de Plex con Trakt.
+PlexyTrackt – Synchronizes Plex watched history with Trakt.
 
-• Compatible con PlexAPI ≥ 4.15  
-• Conversión segura de «viewedAt» (datetime, timestamp numérico o cadena)  
-• Manejo de películas sin año (year == None) para evitar errores 500 de Plex  
-• Sustituido `searchShows` (eliminado en PlexAPI ≥ 4.14) por búsqueda genérica libtype="show"
+• Compatible with PlexAPI ≥ 4.15
+• Safe conversion of ``viewedAt`` (datetime, numeric timestamp or string)
+• Handles movies without year (``year == None``) to avoid Plex 500 errors
+• Replaced ``searchShows`` (removed in PlexAPI ≥ 4.14) with generic search ``libtype="show"``
 """
 
 import os
@@ -35,20 +35,20 @@ logger = logging.getLogger(__name__)
 # --------------------------------------------------------------------------- #
 app = Flask(__name__)
 
-SYNC_INTERVAL_MINUTES = 60           # frecuencia por defecto
+SYNC_INTERVAL_MINUTES = 60           # default frequency
 scheduler = BackgroundScheduler()
 
 # --------------------------------------------------------------------------- #
-# CONSTANTES OAUTH TRAKT
+# TRAKT OAUTH CONSTANTS
 # --------------------------------------------------------------------------- #
 TRAKT_REDIRECT_URI = "urn:ietf:wg:oauth:2.0:oob"
 TOKEN_FILE = "trakt_tokens.json"
 
 # --------------------------------------------------------------------------- #
-# UTILIDADES
+# UTILITIES
 # --------------------------------------------------------------------------- #
 def to_iso_z(value) -> Optional[str]:
-    """Convierte cualquier variante de «viewedAt» a ISO-8601 UTC (“…Z”)."""
+    """Convert any ``viewedAt`` variant to ISO-8601 UTC ("...Z")."""
     if value is None:
         return None
 
@@ -61,22 +61,22 @@ def to_iso_z(value) -> Optional[str]:
         return datetime.utcfromtimestamp(value).isoformat() + "Z"
 
     if isinstance(value, str):                           # str
-        try:                                             # entero en texto
+        try:                                             # integer as text
             return datetime.utcfromtimestamp(int(value)).isoformat() + "Z"
         except (TypeError, ValueError):
             pass
-        try:                                             # ISO
+        try:                                             # ISO string
             dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
             return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
         except ValueError:
             pass
 
-    logger.warning("viewedAt con formato no reconocido: %r (%s)", value, type(value))
+    logger.warning("Unrecognized viewedAt format: %r (%s)", value, type(value))
     return None
 
 
 # --------------------------------------------------------------------------- #
-# TOKENS TRAKT
+# TRAKT TOKENS
 # --------------------------------------------------------------------------- #
 def load_trakt_tokens() -> None:
     if os.environ.get("TRAKT_ACCESS_TOKEN") and os.environ.get("TRAKT_REFRESH_TOKEN"):
@@ -165,7 +165,7 @@ def refresh_trakt_token() -> Optional[str]:
 def trakt_request(method: str, endpoint: str, headers: dict, **kwargs) -> requests.Response:
     url = f"https://api.trakt.tv{endpoint}"
     resp = requests.request(method, url, headers=headers, timeout=30, **kwargs)
-    if resp.status_code == 401:                       # token expirado
+    if resp.status_code == 401:                       # token expired
         new_token = refresh_trakt_token()
         if new_token:
             headers["Authorization"] = f"Bearer {new_token}"
@@ -188,7 +188,7 @@ def get_plex_history(
     for entry in plex.history():
         watched_at = to_iso_z(getattr(entry, "viewedAt", None))
 
-        # Películas
+        # Movies
         if entry.type == "movie":
             title = getattr(entry, "title", None)
             year = getattr(entry, "year", None)
@@ -202,7 +202,7 @@ def get_plex_history(
                     continue
             movies[(title, year)] = watched_at
 
-        # Episodios
+        # Episodes
         elif entry.type == "episode":
             season = getattr(entry, "parentIndex", None)
             number = getattr(entry, "index", None)
@@ -293,8 +293,8 @@ def update_plex(
     movies: Set[Tuple[str, Optional[int]]],
     episodes: Set[Tuple[str, str]],
 ) -> None:
-    """Marca como vistos en Plex los ítems que figuran en Trakt pero no en Plex."""
-    # Películas
+    """Mark items as watched in Plex when they appear in Trakt but not in Plex."""
+    # Movies
     for title, year in movies:
         try:
             if year:
@@ -306,12 +306,12 @@ def update_plex(
         except BadRequest as exc:
             logger.warning("Plex search error for %s (%s): %s", title, year, exc)
 
-    # Episodios
+    # Episodes
     for show, code in episodes:
         season = int(code[1:3])
         number = int(code[4:6])
         try:
-            # searchShows eliminado → buscar como show genérico
+            # searchShows removed → use generic show search
             series = plex.library.search(title=show, libtype="show")
             for show_obj in series:
                 ep = show_obj.episode(season=season, episode=number)
@@ -322,7 +322,7 @@ def update_plex(
 
 
 # --------------------------------------------------------------------------- #
-# TAREA SCHEDULER
+# SCHEDULER TASK
 # --------------------------------------------------------------------------- #
 def sync():
     logger.info("Starting synchronization job")
@@ -387,7 +387,7 @@ def index():
 
     load_trakt_tokens()
 
-    # 1) Autorización inicial
+    # 1) Initial authorization
     if not os.environ.get("TRAKT_ACCESS_TOKEN") or not os.environ.get("TRAKT_REFRESH_TOKEN"):
         if request.method == "POST":
             code = request.form.get("code", "").strip()
@@ -401,7 +401,7 @@ def index():
         )
         return render_template("authorize.html", auth_url=auth_url)
 
-    # 2) Cambiar intervalo
+    # 2) Change interval
     if request.method == "POST":
         minutes = int(request.form.get("minutes", 60))
         SYNC_INTERVAL_MINUTES = minutes
@@ -413,7 +413,7 @@ def index():
 
 
 # --------------------------------------------------------------------------- #
-# ARRANQUE DEL SCHEDULER
+# SCHEDULER STARTUP
 # --------------------------------------------------------------------------- #
 def test_connections() -> bool:
     plex_baseurl = os.environ.get("PLEX_BASEURL")

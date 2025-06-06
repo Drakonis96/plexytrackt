@@ -8,14 +8,12 @@ The application expects the following API credentials:
 
 - `PLEX_BASEURL` – URL of your Plex server, e.g. `http://localhost:32400`.
 - `PLEX_TOKEN` – your Plex authentication token.
-- `TRAKT_ACCESS_TOKEN` – access token for Trakt.
 - `TRAKT_CLIENT_ID` – client ID for your Trakt application.
-- `TRAKT_REFRESH_TOKEN` – refresh token returned when obtaining the access token.
 - `TRAKT_CLIENT_SECRET` – client secret from your Trakt application.
 
 The application uses `plexapi` version 4.15 or newer (but below 5).
 
-If you don't already have the tokens, please see the next sections on how to obtain them.
+If you don't already have the Trakt credentials, please see the next sections on how to obtain them.
 
 ## Getting a Plex token
 
@@ -53,11 +51,6 @@ If you don't already have the tokens, please see the next sections on how to obt
    The response contains an `access_token` and `refresh_token`. Save both along
    with the client ID and client secret.
 
-Once the application is running it will look for these tokens in the
-environment. If they are missing, PlexyTrackt shows a web page asking for the
-authorization code. Enter the code from the Trakt authorization page and the
-application will automatically exchange it for an access and refresh token and
-store them in `trakt_tokens.json` for future use.
 
 ## Running with Docker Compose
 
@@ -67,9 +60,7 @@ store them in `trakt_tokens.json` for future use.
 ```
 PLEX_BASEURL=http://localhost:32400
 PLEX_TOKEN=YOUR_PLEX_TOKEN
-TRAKT_ACCESS_TOKEN=YOUR_TRAKT_TOKEN
 TRAKT_CLIENT_ID=YOUR_TRAKT_CLIENT_ID
-TRAKT_REFRESH_TOKEN=YOUR_TRAKT_REFRESH_TOKEN
 TRAKT_CLIENT_SECRET=YOUR_TRAKT_CLIENT_SECRET
 ```
 

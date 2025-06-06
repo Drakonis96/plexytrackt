@@ -1,8 +1,15 @@
 import os
+import logging
 import requests
 from flask import Flask, render_template, request, redirect, url_for
 from apscheduler.schedulers.background import BackgroundScheduler
 from plexapi.server import PlexServer
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
@@ -16,11 +23,10 @@ def get_plex_history(plex):
     movies = set()
     episodes = set()
     for entry in plex.history():
-        # Debugging: inspect available attributes on each history entry
         try:
-            print(vars(entry))
+            logger.debug(vars(entry))
         except Exception as exc:
-            print(f"Failed to inspect entry: {exc}")
+            logger.debug(f"Failed to inspect entry: {exc}")
         if entry.type == 'movie':
             try:
                 movies.add((entry.title, entry.year))
@@ -94,19 +100,20 @@ def update_plex(plex, movies, episodes):
         season = int(code[1:3])
         number = int(code[4:6])
         results = plex.library.searchShows(title=show)
-        for show_obj in results:
-            ep = show_obj.get_episode(season=season, episode=number)
-            if ep:
-                ep.markWatched()
+    for show_obj in results:
+        ep = show_obj.get_episode(season=season, episode=number)
+        if ep:
+            ep.markWatched()
 
 
 def sync():
+    logger.info('Starting synchronization job')
     plex_baseurl = os.environ.get('PLEX_BASEURL')
     plex_token = os.environ.get('PLEX_TOKEN')
     trakt_token = os.environ.get('TRAKT_ACCESS_TOKEN')
     trakt_client_id = os.environ.get('TRAKT_CLIENT_ID')
     if not all([plex_baseurl, plex_token, trakt_token, trakt_client_id]):
-        print('Missing environment variables for Plex or Trakt.')
+        logger.error('Missing environment variables for Plex or Trakt.')
         return
 
     plex = PlexServer(plex_baseurl, plex_token)
@@ -120,8 +127,20 @@ def sync():
     plex_movies, plex_episodes = get_plex_history(plex)
     trakt_movies, trakt_episodes = get_trakt_history(headers)
 
+    logger.info(
+        'Plex history contains %d movies and %d episodes',
+        len(plex_movies),
+        len(plex_episodes),
+    )
+    logger.info(
+        'Trakt history contains %d movies and %d episodes',
+        len(trakt_movies),
+        len(trakt_episodes),
+    )
+
     update_trakt(headers, plex_movies - trakt_movies, plex_episodes - trakt_episodes)
     update_plex(plex, trakt_movies - plex_movies, trakt_episodes - plex_episodes)
+    logger.info('Synchronization job finished')
 
 
 @app.route('/', methods=['GET', 'POST'])
@@ -136,11 +155,51 @@ def index():
     return render_template('index.html', minutes=SYNC_INTERVAL_MINUTES)
 
 
+def test_connections():
+    """Verify connectivity to Plex and Trakt before starting."""
+    plex_baseurl = os.environ.get('PLEX_BASEURL')
+    plex_token = os.environ.get('PLEX_TOKEN')
+    trakt_token = os.environ.get('TRAKT_ACCESS_TOKEN')
+    trakt_client_id = os.environ.get('TRAKT_CLIENT_ID')
+
+    if not all([plex_baseurl, plex_token, trakt_token, trakt_client_id]):
+        logger.error('Missing environment variables for Plex or Trakt.')
+        return False
+
+    try:
+        PlexServer(plex_baseurl, plex_token).account()
+        logger.info('Successfully connected to Plex.')
+    except Exception as exc:
+        logger.error('Failed to connect to Plex: %s', exc)
+        return False
+
+    headers = {
+        'Authorization': f'Bearer {trakt_token}',
+        'Content-Type': 'application/json',
+        'trakt-api-version': '2',
+        'trakt-api-key': trakt_client_id,
+    }
+    try:
+        resp = requests.get('https://api.trakt.tv/users/settings', headers=headers)
+        resp.raise_for_status()
+        logger.info('Successfully connected to Trakt.')
+    except Exception as exc:
+        logger.error('Failed to connect to Trakt: %s', exc)
+        return False
+
+    return True
+
+
 def start_scheduler():
+    if not test_connections():
+        logger.error('Connection test failed. Scheduler will not start.')
+        return
     scheduler.add_job(sync, 'interval', minutes=SYNC_INTERVAL_MINUTES, id='sync_job')
     scheduler.start()
+    logger.info('Scheduler started with interval %d minutes', SYNC_INTERVAL_MINUTES)
 
 
 if __name__ == '__main__':
+    logger.info('Starting PlexyTrackt application')
     start_scheduler()
     app.run(host='0.0.0.0', port=5000)

@@ -51,10 +51,6 @@ If you don't already have the Trakt credentials, please see the next sections on
    The response contains an `access_token` and `refresh_token`. Save both along
    with the client ID and client secret.
 
-When you start PlexyTrackt, open `http://localhost:5000` in your browser. The
-first time you visit the page it will prompt you for the authorization code from
-Trakt. After you provide the code the application exchanges it for an access and
-refresh token and stores them in `trakt_tokens.json` for future use.
 
 ## Running with Docker Compose
 

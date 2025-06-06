@@ -16,12 +16,29 @@ def get_plex_history(plex):
     movies = set()
     episodes = set()
     for entry in plex.history():
+        # Debugging: inspect available attributes on each history entry
+        try:
+            print(vars(entry))
+        except Exception as exc:
+            print(f"Failed to inspect entry: {exc}")
         if entry.type == 'movie':
-            movie = entry.item
-            movies.add((movie.title, movie.year))
+            try:
+                movies.add((entry.title, entry.year))
+            except AttributeError:
+                item = plex.fetchItem(entry.ratingKey)
+                movies.add((item.title, item.year))
         elif entry.type == 'episode':
-            episode = entry.item
-            episodes.add((episode.grandparentTitle, episode.seasonEpisode))
+            try:
+                season = int(entry.parentIndex)
+                number = int(entry.index)
+                show = entry.grandparentTitle
+            except AttributeError:
+                item = plex.fetchItem(entry.ratingKey)
+                season = item.seasonNumber
+                number = item.index
+                show = item.grandparentTitle
+            code = f"S{season:02d}E{number:02d}"
+            episodes.add((show, code))
     return movies, episodes
 
 

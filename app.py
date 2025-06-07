@@ -36,6 +36,11 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 SYNC_INTERVAL_MINUTES = 60           # default frequency
+SYNC_COLLECTION = True
+SYNC_RATINGS = True
+SYNC_WATCHED = True
+SYNC_LIKED_LISTS = False
+SYNC_WATCHLISTS = False
 scheduler = BackgroundScheduler()
 
 # --------------------------------------------------------------------------- #
@@ -511,6 +516,113 @@ def update_plex(
 
 
 # --------------------------------------------------------------------------- #
+# ADDITIONAL SYNC FEATURES
+# --------------------------------------------------------------------------- #
+
+def sync_collection(plex, headers):
+    """Add all Plex movies to the user's Trakt collection."""
+    movies = []
+    for section in plex.library.sections():
+        if section.type == "movie":
+            for item in section.all():
+                guid = best_guid(item)
+                obj = {"title": item.title}
+                if getattr(item, "year", None):
+                    obj["year"] = normalize_year(item.year)
+                if guid:
+                    obj["ids"] = guid_to_ids(guid)
+                movies.append(obj)
+    if movies:
+        trakt_request("POST", "/sync/collection", headers, json={"movies": movies})
+        logger.info("Synced %d Plex movies to Trakt collection", len(movies))
+
+
+def sync_ratings(plex, headers):
+    """Send user ratings from Plex to Trakt."""
+    movies = []
+    for section in plex.library.sections():
+        if section.type == "movie":
+            for item in section.all():
+                rating = getattr(item, "userRating", None)
+                if rating is not None:
+                    guid = best_guid(item)
+                    obj = {"title": item.title, "rating": int(round(float(rating)))}
+                    if getattr(item, "year", None):
+                        obj["year"] = normalize_year(item.year)
+                    if guid:
+                        obj["ids"] = guid_to_ids(guid)
+                    obj["rated_at"] = to_iso_z(datetime.utcnow())
+                    movies.append(obj)
+    if movies:
+        trakt_request("POST", "/sync/ratings", headers, json={"movies": movies})
+        logger.info("Synced %d ratings to Trakt", len(movies))
+
+
+def sync_liked_lists(plex, headers, plex_guids):
+    """Update liked Trakt lists with movies available in Plex."""
+    try:
+        user_data = trakt_request("GET", "/users/settings", headers).json()
+        username = user_data.get("user", {}).get("ids", {}).get("slug") or user_data.get("user", {}).get("username")
+        likes = trakt_request("GET", "/users/likes/lists", headers).json()
+    except Exception as exc:
+        logger.error("Failed to fetch liked lists: %s", exc)
+        return
+    for like in likes:
+        lst = like.get("list", {})
+        owner = lst.get("user", {}).get("ids", {}).get("slug") or lst.get("user", {}).get("username")
+        slug = lst.get("ids", {}).get("slug")
+        if not owner or not slug:
+            continue
+        try:
+            items = trakt_request("GET", f"/users/{owner}/lists/{slug}/items/movies", headers).json()
+        except Exception as exc:
+            logger.error("Failed to fetch list %s/%s: %s", owner, slug, exc)
+            continue
+        movies = []
+        for it in items:
+            ids = it.get("movie", {}).get("ids", {})
+            if ids.get("imdb") and f"imdb://{ids['imdb']}" in plex_guids:
+                movies.append({"ids": {"imdb": ids["imdb"]}})
+            elif ids.get("tmdb") and f"tmdb://{ids['tmdb']}" in plex_guids:
+                movies.append({"ids": {"tmdb": ids["tmdb"]}})
+            elif ids.get("tvdb") and f"tvdb://{ids['tvdb']}" in plex_guids:
+                movies.append({"ids": {"tvdb": ids["tvdb"]}})
+        if movies:
+            try:
+                trakt_request(
+                    "POST",
+                    f"/users/{username}/lists/{slug}/items",
+                    headers,
+                    json={"movies": movies},
+                )
+                logger.info("Updated liked list %s with %d movies", slug, len(movies))
+            except Exception as exc:
+                logger.error("Failed updating list %s: %s", slug, exc)
+
+
+def sync_watchlist(headers, plex_guids):
+    """Remove movies from Trakt watchlist that already exist in Plex."""
+    try:
+        items = trakt_request("GET", "/sync/watchlist/movies", headers).json()
+    except Exception as exc:
+        logger.error("Failed to fetch Trakt watchlist: %s", exc)
+        return
+    remove = []
+    for it in items:
+        ids = it.get("movie", {}).get("ids", {})
+        if ids.get("imdb") and f"imdb://{ids['imdb']}" in plex_guids:
+            remove.append({"ids": {"imdb": ids["imdb"]}})
+        elif ids.get("tmdb") and f"tmdb://{ids['tmdb']}" in plex_guids:
+            remove.append({"ids": {"tmdb": ids["tmdb"]}})
+        elif ids.get("tvdb") and f"tvdb://{ids['tvdb']}" in plex_guids:
+            remove.append({"ids": {"tvdb": ids["tvdb"]}})
+    if remove:
+        trakt_request("POST", "/sync/watchlist/remove", headers, json={"movies": remove})
+        logger.info("Removed %d movies from Trakt watchlist", len(remove))
+
+
+
+# --------------------------------------------------------------------------- #
 # SCHEDULER TASK
 # --------------------------------------------------------------------------- #
 def sync():
@@ -535,7 +647,13 @@ def sync():
         "trakt-api-key": trakt_client_id,
     }
 
+    if SYNC_COLLECTION:
+        sync_collection(plex, headers)
+    if SYNC_RATINGS:
+        sync_ratings(plex, headers)
+
     plex_movies, plex_episodes = get_plex_history(plex)
+    plex_guids = {d["guid"] for d in plex_movies.values() if d.get("guid")}
     (
         trakt_movies,
         trakt_episodes,
@@ -587,6 +705,11 @@ def sync():
     }
     update_plex(plex, missing_movies, missing_episodes)
 
+    if SYNC_LIKED_LISTS:
+        sync_liked_lists(plex, headers, plex_guids)
+    if SYNC_WATCHLISTS:
+        sync_watchlist(headers, plex_guids)
+
     logger.info("Synchronization job finished")
 
 
@@ -595,7 +718,7 @@ def sync():
 # --------------------------------------------------------------------------- #
 @app.route("/", methods=["GET", "POST"])
 def index():
-    global SYNC_INTERVAL_MINUTES
+    global SYNC_INTERVAL_MINUTES, SYNC_COLLECTION, SYNC_RATINGS, SYNC_WATCHED, SYNC_LIKED_LISTS, SYNC_WATCHLISTS
 
     load_trakt_tokens()
 
@@ -617,11 +740,24 @@ def index():
     if request.method == "POST":
         minutes = int(request.form.get("minutes", 60))
         SYNC_INTERVAL_MINUTES = minutes
+        SYNC_COLLECTION = request.form.get("collection") is not None
+        SYNC_RATINGS = request.form.get("ratings") is not None
+        SYNC_WATCHED = request.form.get("watched") is not None
+        SYNC_LIKED_LISTS = request.form.get("liked_lists") is not None
+        SYNC_WATCHLISTS = request.form.get("watchlists") is not None
         scheduler.remove_all_jobs()
         scheduler.add_job(sync, "interval", minutes=minutes, id="sync_job")
         return redirect(url_for("index"))
 
-    return render_template("index.html", minutes=SYNC_INTERVAL_MINUTES)
+    return render_template(
+        "index.html",
+        minutes=SYNC_INTERVAL_MINUTES,
+        collection=SYNC_COLLECTION,
+        ratings=SYNC_RATINGS,
+        watched=SYNC_WATCHED,
+        liked_lists=SYNC_LIKED_LISTS,
+        watchlists=SYNC_WATCHLISTS,
+    )
 
 
 @app.route("/stop", methods=["POST"])

@@ -1,7 +1,6 @@
 # PlexyTrackt
 
-This project syncs watched history between Plex and Trakt. It runs a small Flask web interface that allows you to configure the sync interval. The actual synchronization happens in the background using the APIs of both services.
-Items that are manually marked as watched in Plex are detected as well.
+This project synchronizes your Plex library with Trakt. Besides watched history it can optionally add items to your Trakt collection, sync ratings, keep watchlists up to date and import movies from lists you like on Trakt. A small Flask web interface lets you choose which features to enable and configure the sync interval. Items that are manually marked as watched in Plex are detected as well.
 
 ## Requirements
 

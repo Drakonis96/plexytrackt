@@ -1,6 +1,7 @@
 # PlexyTrackt
 
 This project syncs watched history between Plex and Trakt. It runs a small Flask web interface that allows you to configure the sync interval. The actual synchronization happens in the background using the APIs of both services.
+Items that are manually marked as watched in Plex are detected as well.
 
 ## Requirements
 

@@ -219,6 +219,23 @@ def get_plex_history(
             code = f"S{int(season):02d}E{int(number):02d}"
             episodes[(show, code)] = watched_at
 
+    logger.info("Fetching watched flags from Plex library…")
+    for section in plex.library.sections():
+        try:
+            if section.type == "movie":
+                for item in section.search(viewCount__gt=0):
+                    key = (item.title, item.year)
+                    if key not in movies:
+                        movies[key] = to_iso_z(getattr(item, "lastViewedAt", None))
+            elif section.type == "show":
+                for ep in section.searchEpisodes(viewCount__gt=0):
+                    code = f"S{int(ep.seasonNumber):02d}E{int(ep.episodeNumber):02d}"
+                    key = (ep.grandparentTitle, code)
+                    if key not in episodes:
+                        episodes[key] = to_iso_z(getattr(ep, "lastViewedAt", None))
+        except Exception as exc:
+            logger.debug("Failed fetching watched items from section %s: %s", section.title, exc)
+
     return movies, episodes
 
 

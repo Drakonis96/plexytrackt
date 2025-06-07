@@ -1,7 +1,7 @@
 body {
     font-family: 'Roboto', Arial, sans-serif;
-    background: linear-gradient(135deg, #ff4081, #7c4dff);
-    color: #ffffff;
+    background: #fff;
+    color: #222;
     margin: 0;
     padding: 0;
     display: flex;
@@ -13,7 +13,7 @@ body {
 .container {
     width: 90%;
     max-width: 500px;
-    background: rgba(255, 255, 255, 0.1);
+    background: #fff;
     padding: 30px;
     border-radius: 12px;
     box-shadow: 0 4px 16px rgba(0,0,0,0.2);
@@ -37,17 +37,45 @@ button {
     padding: 10px 15px;
     border: none;
     border-radius: 4px;
-    background-color: #ff4081;
     color: #fff;
     cursor: pointer;
+    min-width: 120px;
+    margin-right: 10px;
+}
+
+button[type="submit"]:first-of-type {
+    background-color: #43a047; /* Green */
+}
+
+button[type="submit"]:not(:first-of-type) {
+    background-color: #e53935; /* Red */
 }
 
 button:hover {
-    background-color: #f50057;
+    filter: brightness(0.95);
+}
+
+.options {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 16px;
 }
 
 .options label {
     display: flex;
     align-items: center;
     gap: 8px;
+    flex-direction: row;
+    margin-bottom: 0;
+}
+
+.options input[type="checkbox"] {
+    margin: 0 8px 0 0;
+}
+
+.logo {
+    display: block;
+    margin: 0 auto 20px auto;
+    max-width: 120px;
 }

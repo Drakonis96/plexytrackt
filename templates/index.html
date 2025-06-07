@@ -10,21 +10,24 @@
 </head>
 <body>
 <div class="container">
+    <img src="/static/logo.png" alt="Logo" class="logo">
     <h1>Plex/Trakt Sync</h1>
     <form method="post">
         <label for="minutes">Sync every (minutes):</label>
         <input type="number" id="minutes" name="minutes" min="1" value="{{ minutes }}">
         <div class="options">
-            <label><input type="checkbox" name="collection" {% if collection %}checked{% endif %}> Sync collection</label><br>
-            <label><input type="checkbox" name="ratings" {% if ratings %}checked{% endif %}> Sync ratings</label><br>
-            <label><input type="checkbox" name="watched" {% if watched %}checked{% endif %}> Sync watched history</label><br>
-            <label><input type="checkbox" name="liked_lists" {% if liked_lists %}checked{% endif %}> Sync liked lists</label><br>
+            <label><input type="checkbox" name="collection" {% if collection %}checked{% endif %}> Sync collection</label>
+            <label><input type="checkbox" name="ratings" {% if ratings %}checked{% endif %}> Sync ratings</label>
+            <label><input type="checkbox" name="watched" {% if watched %}checked{% endif %}> Sync watched history</label>
+            <label><input type="checkbox" name="liked_lists" {% if liked_lists %}checked{% endif %}> Sync liked lists</label>
             <label><input type="checkbox" name="watchlists" {% if watchlists %}checked{% endif %}> Sync watchlists</label>
         </div>
-        <button type="submit">Update</button>
-    </form>
-    <form method="post" action="{{ url_for('stop') }}">
-        <button type="submit">Stop Sync</button>
+        <div style="display: flex; gap: 10px; justify-content: center;">
+            <button type="submit">Update</button>
+            <form method="post" action="{{ url_for('stop') }}" style="margin: 0;">
+                <button type="submit">Stop Sync</button>
+            </form>
+        </div>
     </form>
 </div>
 </body>

@@ -28,7 +28,7 @@ input {
     margin-top: 10px;
     width: 100%;
     padding: 8px;
-    border: none;
+    border: 2px solid #000000;
     border-radius: 4px;
 }
 
@@ -58,47 +58,79 @@ button:hover {
 .options {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    margin-bottom: 16px;
+    gap: 12px;
+    margin-top: 24px;
+    margin-bottom: 24px;
     align-items: flex-start;
+    padding-top: 16px;
+    border-top: 1px solid #e0e0e0;
 }
 
 .option-label {
     display: flex;
     flex-direction: row;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-start;
     width: 100%;
     font-size: 1em;
-    gap: 10px;
+    gap: 12px;
+    padding: 8px 0;
 }
 
 .options label {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 12px;
     flex-direction: row;
     margin-bottom: 0;
     width: 100%;
+    padding: 6px 0;
 }
 
 .options input[type="checkbox"] {
-    margin-left: 10px;
-    margin-right: 0;
-    margin: 0 8px 0 0;
+    margin: 0;
+    margin-right: 12px;
     accent-color: #43a047;
     width: 18px;
     height: 18px;
+    flex-shrink: 0;
+    border: 2px solid #000000;
 }
 
 .input-bordered {
-    border: 2px solid #e0e0e0;
+    border: 2px solid #000000 !important;
+    border-radius: 6px;
+    padding: 8px 12px;
+    background: #fafafa;
+    margin-bottom: 16px;
+.input-bordered {
+    border: 2px solid #000000 !important;
     border-radius: 6px;
     padding: 8px 12px;
     background: #fafafa;
     margin-bottom: 16px;
     width: 100%;
     box-sizing: border-box;
+}
+
+.confirmation-message {
+    margin-top: 15px;
+    padding: 12px;
+    border-radius: 6px;
+    text-align: center;
+    font-weight: 500;
+    animation: fadeIn 0.3s ease-in;
+}
+
+.confirmation-message.success {
+    background-color: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 .form-bordered {

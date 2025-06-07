@@ -51,6 +51,13 @@ TRAKT_REDIRECT_URI = "urn:ietf:wg:oauth:2.0:oob"
 TOKEN_FILE = "trakt_tokens.json"
 
 # --------------------------------------------------------------------------- #
+# CUSTOM EXCEPTIONS
+# --------------------------------------------------------------------------- #
+class TraktAccountLimitError(Exception):
+    """Raised when Trakt returns HTTP 420 (account limit exceeded)."""
+    pass
+
+# --------------------------------------------------------------------------- #
 # UTILITIES
 # --------------------------------------------------------------------------- #
 def to_iso_z(value) -> Optional[str]:
@@ -304,6 +311,15 @@ def trakt_request(method: str, endpoint: str, headers: dict, **kwargs) -> reques
         if new_token:
             headers["Authorization"] = f"Bearer {new_token}"
             resp = requests.request(method, url, headers=headers, timeout=30, **kwargs)
+
+    if resp.status_code == 420:
+        msg = (
+            "Trakt API returned 420 – account limit exceeded. "
+            "Upgrade to VIP or reduce the size of your collection/watchlist."
+        )
+        logger.warning(msg)
+        raise TraktAccountLimitError(msg)
+
     resp.raise_for_status()
     return resp
 
@@ -764,7 +780,10 @@ def sync():
     }
 
     if SYNC_COLLECTION:
-        sync_collection(plex, headers)
+        try:
+            sync_collection(plex, headers)
+        except TraktAccountLimitError as exc:
+            logger.error("Collection sync skipped: %s", exc)
     if SYNC_RATINGS:
         sync_ratings(plex, headers)
 
@@ -806,9 +825,15 @@ def sync():
     update_plex(plex, missing_movies, missing_episodes)
 
     if SYNC_LIKED_LISTS:
-        sync_liked_lists(plex, headers, plex_movie_guids)
+        try:
+            sync_liked_lists(plex, headers, plex_movie_guids)
+        except TraktAccountLimitError as exc:
+            logger.error("Liked-lists sync skipped: %s", exc)
     if SYNC_WATCHLISTS:
-        sync_watchlist(headers, plex_movie_guids)
+        try:
+            sync_watchlist(headers, plex_movie_guids)
+        except TraktAccountLimitError as exc:
+            logger.error("Watchlist sync skipped: %s", exc)
 
     logger.info("Synchronization job finished")
 

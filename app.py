@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 SYNC_INTERVAL_MINUTES = 60           # default frequency
-SYNC_COLLECTION = True
+SYNC_COLLECTION = False
 SYNC_RATINGS = True
 SYNC_WATCHED = True              # ahora sí se respeta este flag
 SYNC_LIKED_LISTS = False

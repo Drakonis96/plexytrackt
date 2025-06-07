@@ -130,6 +130,17 @@ def best_guid(item) -> Optional[str]:
     return None
 
 
+def get_show_from_library(plex, title):
+    """Return a show object from any library section."""
+    for sec in plex.library.sections():
+        if sec.type == "show":
+            try:
+                return sec.get(title)
+            except NotFound:
+                continue
+    return None
+
+
 def movie_key(title: str, year: Optional[int], guid: Optional[str]) -> Union[str, Tuple[str, Optional[int]]]:
     """Return a unique key for comparing movies."""
     if guid:
@@ -443,7 +454,8 @@ def update_trakt(
             ep_obj["ids"] = guid_to_ids(guid)
         else:
             # Usamos los IDs de la serie para que Trakt encuentre el episodio
-            show_ids = guid_to_ids(best_guid(plex.library.section("TV Shows").get(show)))
+            show_obj = get_show_from_library(plex, show)
+            show_ids = guid_to_ids(best_guid(show_obj)) if show_obj else {}
             if show_ids:
                 ep_obj["show"] = {"ids": show_ids}
             else:
@@ -676,13 +688,22 @@ def sync():
 
     # — PRECALC — evitamos recomputar en cada iteración
     trakt_titles = {
-        k.lower() if isinstance(k, str) else k[0].lower() for k in trakt_movies
+        (k if isinstance(k, str) else k[0]).lower() for k in trakt_movies
+    }
+    trakt_years = {
+        (k if isinstance(k, str) else k[0]).lower(): (
+            None if isinstance(k, str) else k[1]
+        )
+        for k in trakt_movies
     }
 
     def already_on_trakt(d):
         """True si la película ya existe en Trakt por GUID o título."""
-        return (d["guid"] and d["guid"] in trakt_movie_guids) or (
-            d["title"].lower() in trakt_titles
+        if d["guid"] and d["guid"] in trakt_movie_guids:
+            return True
+        t = d["title"].lower()
+        return t in trakt_titles and (
+            trakt_years[t] is None or trakt_years[t] == d["year"]
         )
 
     new_movies = [

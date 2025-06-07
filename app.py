@@ -13,7 +13,7 @@ import json
 import logging
 from datetime import datetime, timezone
 from numbers import Number
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 import requests
 from flask import Flask, render_template, request, redirect, url_for
@@ -73,6 +73,112 @@ def to_iso_z(value) -> Optional[str]:
 
     logger.warning("Unrecognized viewedAt format: %r (%s)", value, type(value))
     return None
+
+
+def normalize_year(value: Union[str, int, None]) -> Optional[int]:
+    """Return ``value`` as ``int`` if possible, otherwise ``None``."""
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        logger.debug("Invalid year value: %r", value)
+        return None
+
+
+def _parse_guid_value(raw: str) -> Optional[str]:
+    """Convert a raw Plex GUID string to a known imdb/tmdb/tvdb prefix."""
+    if raw.startswith("imdb://"):
+        return raw.split("?", 1)[0]
+    if raw.startswith("tmdb://"):
+        return raw.split("?", 1)[0]
+    if raw.startswith("tvdb://"):
+        return raw.split("?", 1)[0]
+    if "themoviedb://" in raw:
+        val = raw.split("themoviedb://", 1)[1].split("?", 1)[0]
+        return f"tmdb://{val.split('/')[0]}"
+    if "thetvdb://" in raw:
+        val = raw.split("thetvdb://", 1)[1].split("?", 1)[0]
+        return f"tvdb://{val.split('/')[0]}"
+    if "imdb://" in raw:
+        val = raw.split("imdb://", 1)[1].split("?", 1)[0]
+        return f"imdb://{val.split('/')[0]}"
+    return None
+
+
+def best_guid(item) -> Optional[str]:
+    """Return a preferred GUID (imdb → tmdb → tvdb) for a Plex item."""
+    try:
+        for g in getattr(item, "guids", []) or []:
+            val = _parse_guid_value(g.id)
+            if val and val.startswith("imdb://"):
+                return val
+        for g in getattr(item, "guids", []) or []:
+            val = _parse_guid_value(g.id)
+            if val and (val.startswith("tmdb://") or val.startswith("tvdb://")):
+                return val
+        if getattr(item, "guid", None):
+            return _parse_guid_value(item.guid)
+    except Exception as exc:
+        logger.debug("Failed retrieving GUIDs: %s", exc)
+    return None
+
+
+def movie_key(title: str, year: Optional[int], guid: Optional[str]) -> Union[str, Tuple[str, Optional[int]]]:
+    """Return a unique key for comparing movies."""
+    if guid:
+        return guid
+    return (title, year)
+
+
+def guid_to_ids(guid: str) -> Dict[str, Union[str, int]]:
+    """Convert a Plex GUID to a Trakt ids mapping."""
+    if guid.startswith("imdb://"):
+        return {"imdb": guid.split("imdb://", 1)[1]}
+    if guid.startswith("tmdb://"):
+        return {"tmdb": int(guid.split("tmdb://", 1)[1])}
+    if guid.startswith("tvdb://"):
+        return {"tvdb": int(guid.split("tvdb://", 1)[1])}
+    return {}
+
+
+def trakt_movie_key(m: dict) -> Union[str, Tuple[str, Optional[int]]]:
+    """Return a unique key for a Trakt movie object."""
+    ids = m.get("ids", {})
+    if ids.get("imdb"):
+        return f"imdb://{ids['imdb']}"
+    if ids.get("tmdb"):
+        return f"tmdb://{ids['tmdb']}"
+    if ids.get("tvdb"):
+        return f"tvdb://{ids['tvdb']}"
+    return (m["title"], normalize_year(m.get("year")))
+
+
+def episode_key(show: str, code: str, guid: Optional[str]) -> Union[str, Tuple[str, str]]:
+    """Return a unique key for comparing episodes."""
+    if guid:
+        return f"{guid}/{code}"
+    return (show, code)
+
+
+def trakt_episode_key(show: dict, e: dict) -> Union[str, Tuple[str, str]]:
+    """Return a unique key for a Trakt episode object."""
+    ids = e.get("ids", {})
+    if ids.get("imdb"):
+        return f"imdb://{ids['imdb']}"
+    if ids.get("tmdb"):
+        return f"tmdb://{ids['tmdb']}"
+    if ids.get("tvdb"):
+        return f"tvdb://{ids['tvdb']}"
+
+    show_ids = show.get("ids", {})
+    if show_ids.get("imdb"):
+        return f"imdb://{show_ids['imdb']}/{e['season']}/{e['number']}"
+    if show_ids.get("tmdb"):
+        return f"tmdb://{show_ids['tmdb']}/{e['season']}/{e['number']}"
+    if show_ids.get("tvdb"):
+        return f"tvdb://{show_ids['tvdb']}/{e['season']}/{e['number']}"
+    return (show["title"], f"S{e['season']:02d}E{e['number']:02d}")
 
 
 # --------------------------------------------------------------------------- #
@@ -179,10 +285,13 @@ def trakt_request(method: str, endpoint: str, headers: dict, **kwargs) -> reques
 # --------------------------------------------------------------------------- #
 def get_plex_history(
     plex
-) -> Tuple[Dict[Tuple[str, Optional[int]], Optional[str]],
-           Dict[Tuple[str, str], Optional[str]]]:
-    movies: Dict[Tuple[str, Optional[int]], Optional[str]] = {}
-    episodes: Dict[Tuple[str, str], Optional[str]] = {}
+) -> Tuple[
+        Dict[Union[str, Tuple[str, Optional[int]]], Dict[str, Optional[str]]],
+        Dict[Union[str, Tuple[str, str]], Dict[str, Optional[str]]],
+    ]:
+    """Return watched movies and episodes from Plex keyed by GUID when possible."""
+    movies: Dict[Union[str, Tuple[str, Optional[int]]], Dict[str, Optional[str]]] = {}
+    episodes: Dict[Union[str, Tuple[str, str]], Dict[str, Optional[str]]] = {}
 
     logger.info("Fetching Plex history…")
     for entry in plex.history():
@@ -190,49 +299,71 @@ def get_plex_history(
 
         # Movies
         if entry.type == "movie":
-            title = getattr(entry, "title", None)
-            year = getattr(entry, "year", None)
-            if title is None or year is None:
-                try:
-                    item = entry.source() or plex.fetchItem(entry.ratingKey)
-                    title = item.title
-                    year = item.year
-                except Exception as exc:
-                    logger.debug("Failed to fetch movie %s from Plex: %s", entry.ratingKey, exc)
-                    continue
-            movies[(title, year)] = watched_at
+            try:
+                item = entry.source() or plex.fetchItem(entry.ratingKey)
+            except Exception as exc:
+                logger.debug("Failed to fetch movie %s from Plex: %s", entry.ratingKey, exc)
+                continue
+
+            title = item.title
+            year = normalize_year(getattr(item, "year", None))
+            guid = best_guid(item)
+            key = movie_key(title, year, guid)
+            if key not in movies:
+                movies[key] = {"title": title, "year": year, "watched_at": watched_at, "guid": guid}
 
         # Episodes
         elif entry.type == "episode":
             season = getattr(entry, "parentIndex", None)
             number = getattr(entry, "index", None)
             show = getattr(entry, "grandparentTitle", None)
+            try:
+                item = entry.source() or plex.fetchItem(entry.ratingKey)
+            except Exception as exc:
+                logger.debug("Failed to fetch episode %s from Plex: %s", entry.ratingKey, exc)
+                item = None
+            if item:
+                season = season or item.seasonNumber
+                number = number or item.index
+                show = show or item.grandparentTitle
+                guid = best_guid(item)
+            else:
+                guid = None
             if None in (season, number, show):
-                try:
-                    item = entry.source() or plex.fetchItem(entry.ratingKey)
-                    season = item.seasonNumber
-                    number = item.index
-                    show = item.grandparentTitle
-                except Exception as exc:
-                    logger.debug("Failed to fetch episode %s from Plex: %s", entry.ratingKey, exc)
-                    continue
+                continue
             code = f"S{int(season):02d}E{int(number):02d}"
-            episodes[(show, code)] = watched_at
+            key = episode_key(show, code, guid)
+            if key not in episodes:
+                episodes[key] = {"show": show, "code": code, "watched_at": watched_at, "guid": guid}
 
     logger.info("Fetching watched flags from Plex library…")
     for section in plex.library.sections():
         try:
             if section.type == "movie":
                 for item in section.search(viewCount__gt=0):
-                    key = (item.title, item.year)
+                    title = item.title
+                    year = normalize_year(getattr(item, "year", None))
+                    guid = best_guid(item)
+                    key = movie_key(title, year, guid)
                     if key not in movies:
-                        movies[key] = to_iso_z(getattr(item, "lastViewedAt", None))
+                        movies[key] = {
+                            "title": title,
+                            "year": year,
+                            "watched_at": to_iso_z(getattr(item, "lastViewedAt", None)),
+                            "guid": guid,
+                        }
             elif section.type == "show":
                 for ep in section.searchEpisodes(viewCount__gt=0):
                     code = f"S{int(ep.seasonNumber):02d}E{int(ep.episodeNumber):02d}"
-                    key = (ep.grandparentTitle, code)
+                    guid = best_guid(ep)
+                    key = episode_key(ep.grandparentTitle, code, guid)
                     if key not in episodes:
-                        episodes[key] = to_iso_z(getattr(ep, "lastViewedAt", None))
+                        episodes[key] = {
+                            "show": ep.grandparentTitle,
+                            "code": code,
+                            "watched_at": to_iso_z(getattr(ep, "lastViewedAt", None)),
+                            "guid": guid,
+                        }
         except Exception as exc:
             logger.debug("Failed fetching watched items from section %s: %s", section.title, exc)
 
@@ -241,9 +372,17 @@ def get_plex_history(
 
 def get_trakt_history(
     headers: dict,
-) -> Tuple[Set[Tuple[str, Optional[int]]], Set[Tuple[str, str]]]:
-    movies: Set[Tuple[str, Optional[int]]] = set()
-    episodes: Set[Tuple[str, str]] = set()
+) -> Tuple[
+        Set[Union[str, Tuple[str, Optional[int]]]],
+        Set[Union[str, Tuple[str, str]]],
+        Dict[Union[str, Tuple[str, Optional[int]]], Tuple[str, Optional[int]]],
+        Dict[Union[str, Tuple[str, str]], Tuple[str, str]],
+    ]:
+    """Return Trakt history keys and mapping for movies and episodes."""
+    movies: Set[Union[str, Tuple[str, Optional[int]]]] = set()
+    movie_info: Dict[Union[str, Tuple[str, Optional[int]]], Tuple[str, Optional[int]]] = {}
+    episodes: Set[Union[str, Tuple[str, str]]] = set()
+    episode_info: Dict[Union[str, Tuple[str, str]], Tuple[str, str]] = {}
 
     page = 1
     logger.info("Fetching Trakt history…")
@@ -260,27 +399,36 @@ def get_trakt_history(
         for item in data:
             if item["type"] == "movie":
                 m = item["movie"]
-                movies.add((m["title"], m["year"]))
+                key = trakt_movie_key(m)
+                movies.add(key)
+                movie_info[key] = (m["title"], normalize_year(m.get("year")))
             elif item["type"] == "episode":
                 e = item["episode"]
                 show = item["show"]
-                episodes.add((show["title"], f"S{e['season']:02d}E{e['number']:02d}"))
+                key = trakt_episode_key(show, e)
+                episodes.add(key)
+                episode_info[key] = (
+                    show["title"],
+                    f"S{e['season']:02d}E{e['number']:02d}",
+                )
         page += 1
 
-    return movies, episodes
+    return movies, episodes, movie_info, episode_info
 
 
 def update_trakt(
     headers: dict,
-    movies: List[Tuple[str, Optional[int], Optional[str]]],
+    movies: List[Tuple[str, Optional[int], Optional[str], Optional[str]]],
     episodes: List[Tuple[str, str, Optional[str]]],
 ) -> None:
     payload = {"movies": [], "episodes": []}
 
-    for title, year, watched_at in movies:
+    for title, year, watched_at, guid in movies:
         movie_obj = {"title": title}
         if year is not None:
             movie_obj["year"] = year
+        if guid:
+            movie_obj["ids"] = guid_to_ids(guid)
         if watched_at:
             movie_obj["watched_at"] = watched_at
         payload["movies"].append(movie_obj)
@@ -364,7 +512,12 @@ def sync():
     }
 
     plex_movies, plex_episodes = get_plex_history(plex)
-    trakt_movies, trakt_episodes = get_trakt_history(headers)
+    (
+        trakt_movies,
+        trakt_episodes,
+        trakt_info,
+        trakt_ep_info,
+    ) = get_trakt_history(headers)
 
     plex_movie_keys = set(plex_movies.keys())
     plex_episode_keys = set(plex_episodes.keys())
@@ -381,16 +534,33 @@ def sync():
     )
 
     new_movies = [
-        (title, year, plex_movies[(title, year)])
-        for (title, year) in plex_movie_keys - trakt_movies
+        (
+            data["title"],
+            data["year"],
+            data["watched_at"],
+            data["guid"],
+        )
+        for key, data in plex_movies.items()
+        if key not in trakt_movies
     ]
     new_episodes = [
-        (show, code, plex_episodes[(show, code)])
-        for (show, code) in plex_episode_keys - trakt_episodes
+        (
+            data["show"],
+            data["code"],
+            data["watched_at"],
+        )
+        for key, data in plex_episodes.items()
+        if key not in trakt_episodes
     ]
 
     update_trakt(headers, new_movies, new_episodes)
-    update_plex(plex, trakt_movies - plex_movie_keys, trakt_episodes - plex_episode_keys)
+    missing_movies = {
+        trakt_info[k] for k in (trakt_movies - plex_movie_keys) if k in trakt_info
+    }
+    missing_episodes = {
+        trakt_ep_info[k] for k in (trakt_episodes - plex_episode_keys) if k in trakt_ep_info
+    }
+    update_plex(plex, missing_movies, missing_episodes)
 
     logger.info("Synchronization job finished")
 

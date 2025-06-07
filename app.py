@@ -131,15 +131,21 @@ def best_guid(item) -> Optional[str]:
 
 
 def imdb_guid(item) -> Optional[str]:
-    """Return the IMDb GUID for a Plex item if available."""
+    """Return the IMDb GUID for a Plex item if available, otherwise TMDb."""
     try:
         for g in getattr(item, "guids", []) or []:
             val = _parse_guid_value(g.id)
             if val and val.startswith("imdb://"):
                 return val
+        for g in getattr(item, "guids", []) or []:
+            val = _parse_guid_value(g.id)
+            if val and val.startswith("tmdb://"):
+                return val
         if getattr(item, "guid", None):
             val = _parse_guid_value(item.guid)
             if val and val.startswith("imdb://"):
+                return val
+            if val and val.startswith("tmdb://"):
                 return val
     except Exception as exc:
         logger.debug("Failed retrieving IMDb GUID: %s", exc)
@@ -176,15 +182,17 @@ def guid_to_ids(guid: str) -> Dict[str, Union[str, int]]:
 
 
 def trakt_movie_key(m: dict) -> Union[str, Tuple[str, Optional[int]]]:
-    """Return a unique key for a Trakt movie object using IMDb when possible."""
+    """Return a unique key for a Trakt movie object using IMDb or TMDb."""
     ids = m.get("ids", {})
     if ids.get("imdb"):
         return f"imdb://{ids['imdb']}"
+    if ids.get("tmdb"):
+        return f"tmdb://{ids['tmdb']}"
     return m["title"].lower()
 
 
 def episode_key(show: str, code: str, guid: Optional[str]) -> Union[str, Tuple[str, str]]:
-    if guid and guid.startswith("imdb://"):
+    if guid and (guid.startswith("imdb://") or guid.startswith("tmdb://")):
         return guid
     return (show.lower(), code)
 
@@ -193,6 +201,8 @@ def trakt_episode_key(show: dict, e: dict) -> Union[str, Tuple[str, str]]:
     ids = e.get("ids", {})
     if ids.get("imdb"):
         return f"imdb://{ids['imdb']}"
+    if ids.get("tmdb"):
+        return f"tmdb://{ids['tmdb']}"
     return (
         show["title"].lower(),
         f"S{e['season']:02d}E{e['number']:02d}",
@@ -307,7 +317,7 @@ def get_plex_history(
         Dict[str, Dict[str, Optional[str]]],
         Dict[str, Dict[str, Optional[str]]],
     ]:
-    """Return watched movies and episodes from Plex keyed by IMDb GUID."""
+    """Return watched movies and episodes from Plex keyed by IMDb or TMDb GUID."""
     movies: Dict[str, Dict[str, Optional[str]]] = {}
     episodes: Dict[str, Dict[str, Optional[str]]] = {}
 
@@ -392,7 +402,7 @@ def get_trakt_history(
         Dict[str, Tuple[str, Optional[int]]],
         Dict[str, Tuple[str, str]],
     ]:
-    """Return Trakt history keyed by IMDb GUID for movies and episodes."""
+    """Return Trakt history keyed by IMDb or TMDb GUID for movies and episodes."""
     movies: Dict[str, Tuple[str, Optional[int]]] = {}
     episodes: Dict[str, Tuple[str, str]] = {}
 
@@ -412,7 +422,12 @@ def get_trakt_history(
             if item["type"] == "movie":
                 m = item["movie"]
                 ids = m.get("ids", {})
-                guid = f"imdb://{ids['imdb']}" if ids.get("imdb") else None
+                if ids.get("imdb"):
+                    guid = f"imdb://{ids['imdb']}"
+                elif ids.get("tmdb"):
+                    guid = f"tmdb://{ids['tmdb']}"
+                else:
+                    guid = None
                 if not guid:
                     continue
                 if guid not in movies:
@@ -421,7 +436,12 @@ def get_trakt_history(
                 e = item["episode"]
                 show = item["show"]
                 ids = e.get("ids", {})
-                guid = f"imdb://{ids['imdb']}" if ids.get("imdb") else None
+                if ids.get("imdb"):
+                    guid = f"imdb://{ids['imdb']}"
+                elif ids.get("tmdb"):
+                    guid = f"tmdb://{ids['tmdb']}"
+                else:
+                    guid = None
                 if not guid:
                     continue
                 if guid not in episodes:

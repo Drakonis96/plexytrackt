@@ -22,10 +22,13 @@ If you don't already have the Trakt credentials, please see the next sections on
 
 ## Getting a Plex token
 
-1. Log in to <https://plex.tv> with your account.
-2. While still signed in, open <https://plex.tv/api/resources?includeHttps=1>.
-   The page shows an XML listing of your devices. Look for a `token` attribute on
-   one of the `<Device>` entries and copy its value.
+1. Open the Plex Web application and sign in.
+2. Pick any movie or show and click the three dots in the lower right corner to
+   open **Get Info**.
+3. In the information panel choose **View XML**. A new tab will display the XML
+   data for that item.
+4. Copy the value of `X-Plex-Token` from the URL bar – that's your token.
+5. If you need more details, Plex offers instructions at <https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/>.
 
 ## Getting Trakt API credentials
 

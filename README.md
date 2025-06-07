@@ -10,6 +10,7 @@ The application expects the following API credentials:
 - `PLEX_TOKEN` – your Plex authentication token.
 - `TRAKT_CLIENT_ID` – client ID for your Trakt application.
 - `TRAKT_CLIENT_SECRET` – client secret from your Trakt application.
+- `TZ` – timezone for log timestamps, defaults to `Europe/Madrid`.
 
 You do **not** need to provide a Trakt access token or refresh token. The web
 interface will guide you through authorizing the app and will store the tokens
@@ -44,6 +45,7 @@ PLEX_BASEURL=http://localhost:32400
 PLEX_TOKEN=YOUR_PLEX_TOKEN
 TRAKT_CLIENT_ID=YOUR_TRAKT_CLIENT_ID
 TRAKT_CLIENT_SECRET=YOUR_TRAKT_CLIENT_SECRET
+TZ=Europe/Madrid
 ```
 
 3. Build and start the application using Docker Compose:

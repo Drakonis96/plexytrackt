@@ -156,7 +156,9 @@ def trakt_movie_key(m: dict) -> Union[str, Tuple[str, Optional[int]]]:
         return f"tmdb://{ids['tmdb']}"
     if ids.get("tvdb"):
         return f"tvdb://{ids['tvdb']}"
-    return (m["title"], normalize_year(m.get("year")))
+    # Usar solo el título en último término para detectar
+    # la misma película aunque el año no coincida.
+    return m["title"].lower()
 
 
 def episode_key(show: str, code: str, guid: Optional[str]) -> Union[str, Tuple[str, str]]:
@@ -433,7 +435,7 @@ def get_trakt_history(
 def update_trakt(
     headers: dict,
     movies: List[Tuple[str, Optional[int], Optional[str], Optional[str]]],
-    episodes: List[Tuple[str, str, Optional[str]]],
+    episodes: List[Tuple[str, str, Optional[str], Optional[str]]],
 ) -> None:
     payload = {"movies": [], "episodes": []}
 
@@ -447,10 +449,14 @@ def update_trakt(
             movie_obj["watched_at"] = watched_at
         payload["movies"].append(movie_obj)
 
-    for show, code, watched_at in episodes:
+    for show, code, watched_at, guid in episodes:
         season = int(code[1:3])
         number = int(code[4:6])
-        ep_obj = {"title": show, "season": season, "number": number}
+        ep_obj = {"season": season, "number": number}
+        if guid:
+            ep_obj["ids"] = guid_to_ids(guid)
+        else:
+            ep_obj["title"] = show           # fallback
         if watched_at:
             ep_obj["watched_at"] = watched_at
         payload["episodes"].append(ep_obj)
@@ -676,21 +682,27 @@ def sync():
         len(trakt_episodes),
     )
 
+    def already_on_trakt(d):
+        # 1) GUID encontrado
+        if d["guid"] and d["guid"] in trakt_movie_guids:
+            return True
+        # 2) Coincidencia por título (ignorando mayúsculas/minúsculas)
+        return d["title"].lower() in {
+            k.lower() if isinstance(k, str) else k[0].lower()
+            for k in trakt_movies
+        }
+
     new_movies = [
-        (
-            data["title"],
-            data["year"],
-            data["watched_at"],
-            data["guid"],
-        )
-        for key, data in plex_movies.items()
-        if key not in trakt_movies and (not data["guid"] or data["guid"] not in trakt_movie_guids)
+        (d["title"], d["year"], d["watched_at"], d["guid"])
+        for d in plex_movies.values()
+        if not already_on_trakt(d)
     ]
     new_episodes = [
         (
             data["show"],
             data["code"],
             data["watched_at"],
+            data["guid"],
         )
         for key, data in plex_episodes.items()
         if key not in trakt_episodes

@@ -41,37 +41,19 @@
         
         <div style="display: flex; gap: 10px; justify-content: center;">
             <button type="submit" id="syncBtn">Sync</button>
-            <form method="post" action="{{ url_for('stop') }}" style="margin: 0;">
-                <button type="submit" id="stopBtn">Stop Sync</button>
-            </form>
         </div>
-        
-        <div id="confirmationMessage" class="confirmation-message" style="display: none;"></div>
     </form>
-    
+
+    <form method="post" action="{{ url_for('stop') }}" style="margin: 10px 0 0 0; display:flex; justify-content:center;">
+        <button type="submit" id="stopBtn">Stop Sync</button>
+    </form>
+
+    <div id="confirmationMessage" class="confirmation-message{% if message %} success{% endif %}" {% if not message %}style="display:none;"{% endif %}>{{ message }}</div>
+
     <script>
-        document.getElementById('syncBtn').addEventListener('click', function() {
-            setTimeout(function() {
-                showConfirmationMessage('Sync settings updated successfully!', 'success');
-            }, 100);
-        });
-        
-        document.getElementById('stopBtn').addEventListener('click', function() {
-            setTimeout(function() {
-                showConfirmationMessage('Sync stopped successfully!', 'success');
-            }, 100);
-        });
-        
-        function showConfirmationMessage(message, type) {
-            const messageDiv = document.getElementById('confirmationMessage');
-            messageDiv.textContent = message;
-            messageDiv.className = 'confirmation-message ' + type;
-            messageDiv.style.display = 'block';
-            
-            // Hide message after 3 seconds
-            setTimeout(function() {
-                messageDiv.style.display = 'none';
-            }, 3000);
+        const msg = document.getElementById('confirmationMessage');
+        if (msg.textContent.trim() !== '') {
+            setTimeout(function() { msg.style.display = 'none'; }, 3000);
         }
     </script>
 </div>

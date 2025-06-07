@@ -895,8 +895,11 @@ def index():
         SYNC_WATCHLISTS = request.form.get("watchlists") is not None
         scheduler.remove_all_jobs()
         scheduler.add_job(sync, "interval", minutes=minutes, id="sync_job")
-        return redirect(url_for("index"))
+        return redirect(
+            url_for("index", message="Sync settings updated successfully!")
+        )
 
+    message = request.args.get("message")
     return render_template(
         "index.html",
         minutes=SYNC_INTERVAL_MINUTES,
@@ -905,13 +908,14 @@ def index():
         watched=SYNC_WATCHED,
         liked_lists=SYNC_LIKED_LISTS,
         watchlists=SYNC_WATCHLISTS,
+        message=message,
     )
 
 
 @app.route("/stop", methods=["POST"])
 def stop():
     stop_scheduler()
-    return redirect(url_for("index"))
+    return redirect(url_for("index", message="Sync stopped successfully!"))
 
 
 # --------------------------------------------------------------------------- #

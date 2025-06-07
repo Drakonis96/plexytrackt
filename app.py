@@ -19,7 +19,7 @@ import requests
 from flask import Flask, render_template, request, redirect, url_for
 from apscheduler.schedulers.background import BackgroundScheduler
 from plexapi.server import PlexServer
-from plexapi.exceptions import BadRequest
+from plexapi.exceptions import BadRequest, NotFound
 
 # --------------------------------------------------------------------------- #
 # LOGGING
@@ -468,6 +468,9 @@ def update_plex(
     episodes: Set[Tuple[str, str]],
 ) -> None:
     """Mark items as watched in Plex when they appear in Trakt but not in Plex."""
+    movie_count = 0
+    episode_count = 0
+
     # Movies
     for title, year in movies:
         try:
@@ -477,6 +480,7 @@ def update_plex(
                 results = plex.library.search(title=title, libtype="movie")
             for item in results:
                 item.markWatched()
+                movie_count += 1
         except BadRequest as exc:
             logger.warning("Plex search error for %s (%s): %s", title, year, exc)
 
@@ -488,11 +492,22 @@ def update_plex(
             # searchShows removed → use generic show search
             series = plex.library.search(title=show, libtype="show")
             for show_obj in series:
-                ep = show_obj.episode(season=season, episode=number)
+                try:
+                    ep = show_obj.episode(season=season, episode=number)
+                except NotFound:
+                    continue
                 if ep:
                     ep.markWatched()
+                    episode_count += 1
         except BadRequest as exc:
             logger.warning("Plex search error for %s %s: %s", show, code, exc)
+
+    if movie_count or episode_count:
+        logger.info(
+            "Marked %d movies and %d episodes as watched in Plex",
+            movie_count,
+            episode_count,
+        )
 
 
 # --------------------------------------------------------------------------- #

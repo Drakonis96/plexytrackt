@@ -169,22 +169,19 @@ def episode_key(show: str, code: str, guid: Optional[str]) -> Union[str, Tuple[s
 
 
 def trakt_episode_key(show: dict, e: dict) -> Union[str, Tuple[str, str]]:
-    """Return a unique key for a Trakt episode object."""
-    ids = e.get("ids", {})
-    if ids.get("imdb"):
-        return f"imdb://{ids['imdb']}"
-    if ids.get("tmdb"):
-        return f"tmdb://{ids['tmdb']}"
-    if ids.get("tvdb"):
-        return f"tvdb://{ids['tvdb']}"
-
+    """Return a unique key for a Trakt episode object using show GUID."""
     show_ids = show.get("ids", {})
     if show_ids.get("imdb"):
-        return f"imdb://{show_ids['imdb']}/{e['season']}/{e['number']}"
-    if show_ids.get("tmdb"):
-        return f"tmdb://{show_ids['tmdb']}/{e['season']}/{e['number']}"
-    if show_ids.get("tvdb"):
-        return f"tvdb://{show_ids['tvdb']}/{e['season']}/{e['number']}"
+        prefix = f"imdb://{show_ids['imdb']}"
+    elif show_ids.get("tmdb"):
+        prefix = f"tmdb://{show_ids['tmdb']}"
+    elif show_ids.get("tvdb"):
+        prefix = f"tvdb://{show_ids['tvdb']}"
+    else:
+        prefix = None
+
+    if prefix:
+        return f"{prefix}/S{e['season']:02d}E{e['number']:02d}"
     return (show["title"], f"S{e['season']:02d}E{e['number']:02d}")
 
 

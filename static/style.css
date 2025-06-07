@@ -45,3 +45,9 @@ button {
 button:hover {
     background-color: #f50057;
 }
+
+.options label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}

@@ -16,6 +16,9 @@
         <input type="number" id="minutes" name="minutes" min="1" value="{{ minutes }}">
         <button type="submit">Update</button>
     </form>
+    <form method="post" action="{{ url_for('stop') }}">
+        <button type="submit">Stop Sync</button>
+    </form>
 </div>
 </body>
 </html>

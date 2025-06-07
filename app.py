@@ -377,12 +377,14 @@ def get_trakt_history(
         Set[Union[str, Tuple[str, str]]],
         Dict[Union[str, Tuple[str, Optional[int]]], Tuple[str, Optional[int]]],
         Dict[Union[str, Tuple[str, str]], Tuple[str, str]],
+        Set[str],
     ]:
-    """Return Trakt history keys and mapping for movies and episodes."""
+    """Return Trakt history keys, title info and GUIDs for movies and episodes."""
     movies: Set[Union[str, Tuple[str, Optional[int]]]] = set()
     movie_info: Dict[Union[str, Tuple[str, Optional[int]]], Tuple[str, Optional[int]]] = {}
     episodes: Set[Union[str, Tuple[str, str]]] = set()
     episode_info: Dict[Union[str, Tuple[str, str]], Tuple[str, str]] = {}
+    movie_guids: Set[str] = set()
 
     page = 1
     logger.info("Fetching Trakt history…")
@@ -402,6 +404,13 @@ def get_trakt_history(
                 key = trakt_movie_key(m)
                 movies.add(key)
                 movie_info[key] = (m["title"], normalize_year(m.get("year")))
+                ids = m.get("ids", {})
+                if ids.get("imdb"):
+                    movie_guids.add(f"imdb://{ids['imdb']}")
+                if ids.get("tmdb"):
+                    movie_guids.add(f"tmdb://{ids['tmdb']}")
+                if ids.get("tvdb"):
+                    movie_guids.add(f"tvdb://{ids['tvdb']}")
             elif item["type"] == "episode":
                 e = item["episode"]
                 show = item["show"]
@@ -413,7 +422,7 @@ def get_trakt_history(
                 )
         page += 1
 
-    return movies, episodes, movie_info, episode_info
+    return movies, episodes, movie_info, episode_info, movie_guids
 
 
 def update_trakt(
@@ -517,6 +526,7 @@ def sync():
         trakt_episodes,
         trakt_info,
         trakt_ep_info,
+        trakt_movie_guids,
     ) = get_trakt_history(headers)
 
     plex_movie_keys = set(plex_movies.keys())
@@ -541,7 +551,7 @@ def sync():
             data["guid"],
         )
         for key, data in plex_movies.items()
-        if key not in trakt_movies
+        if key not in trakt_movies and (not data["guid"] or data["guid"] not in trakt_movie_guids)
     ]
     new_episodes = [
         (
@@ -599,6 +609,12 @@ def index():
     return render_template("index.html", minutes=SYNC_INTERVAL_MINUTES)
 
 
+@app.route("/stop", methods=["POST"])
+def stop():
+    stop_scheduler()
+    return redirect(url_for("index"))
+
+
 # --------------------------------------------------------------------------- #
 # SCHEDULER STARTUP
 # --------------------------------------------------------------------------- #
@@ -638,6 +654,9 @@ def test_connections() -> bool:
 
 def start_scheduler():
     if scheduler.running:
+        if not scheduler.get_job("sync_job"):
+            scheduler.add_job(sync, "interval", minutes=SYNC_INTERVAL_MINUTES, id="sync_job")
+            logger.info("Sync job added with interval %d minutes", SYNC_INTERVAL_MINUTES)
         return
     if not test_connections():
         logger.error("Connection test failed. Scheduler will not start.")
@@ -645,6 +664,13 @@ def start_scheduler():
     scheduler.add_job(sync, "interval", minutes=SYNC_INTERVAL_MINUTES, id="sync_job")
     scheduler.start()
     logger.info("Scheduler started with interval %d minutes", SYNC_INTERVAL_MINUTES)
+
+
+def stop_scheduler():
+    job = scheduler.get_job("sync_job")
+    if job:
+        scheduler.remove_job("sync_job")
+        logger.info("Synchronization job stopped")
 
 
 # --------------------------------------------------------------------------- #

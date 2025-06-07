@@ -53,7 +53,7 @@ TRAKT_CLIENT_SECRET=YOUR_TRAKT_CLIENT_SECRET
 docker-compose up --build
 ```
 
-4. Visit `http://localhost:5000` in your browser. You can adjust the sync interval on the page. The background job starts automatically when the container is running.
+4. Visit `http://localhost:5000` in your browser. You can adjust the sync interval on the page and also stop the synchronization job at any time using the **Stop Sync** button. The background job starts automatically when the container is running.
 
 That's it! The container will continue to sync your Plex and Trakt accounts according to the interval you set.
 

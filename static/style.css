@@ -138,5 +138,7 @@ button:hover {
 .logo {
     display: block;
     margin: 0 auto 20px auto;
+    width: 100%;
     max-width: 120px;
+    height: auto;
 }

@@ -68,7 +68,7 @@ button:hover {
 
 .option-label {
     display: flex;
-    justify-content: space-between;
+    gap: 8px;
     align-items: center;
     width: 100%;
     font-size: 1em;
@@ -81,16 +81,14 @@ button:hover {
 
 .options label {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
     width: 100%;
     padding: 6px 0;
-    gap: 12px;
+    gap: 8px;
 }
 
 .options input[type="checkbox"] {
     margin: 0;
-    margin-right: 12px;
+    margin-right: 0;
     accent-color: #43a047;
     width: 18px;
     height: 18px;

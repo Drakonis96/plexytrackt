@@ -68,23 +68,24 @@ button:hover {
 
 .option-label {
     display: flex;
-    flex-direction: row;
+    justify-content: space-between;
     align-items: center;
-    justify-content: flex-start;
     width: 100%;
     font-size: 1em;
-    gap: 12px;
     padding: 8px 0;
+}
+
+.option-label span {
+    flex: 1;
 }
 
 .options label {
     display: flex;
+    justify-content: space-between;
     align-items: center;
-    gap: 12px;
-    flex-direction: row;
-    margin-bottom: 0;
     width: 100%;
     padding: 6px 0;
+    gap: 12px;
 }
 
 .options input[type="checkbox"] {
@@ -97,12 +98,6 @@ button:hover {
     border: 2px solid #000000;
 }
 
-.input-bordered {
-    border: 2px solid #000000 !important;
-    border-radius: 6px;
-    padding: 8px 12px;
-    background: #fafafa;
-    margin-bottom: 16px;
 .input-bordered {
     border: 2px solid #000000 !important;
     border-radius: 6px;

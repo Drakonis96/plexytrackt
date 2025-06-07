@@ -1,6 +1,6 @@
 body {
     font-family: 'Roboto', Arial, sans-serif;
-    background: #fff;
+    background-color: #fff;
     color: #222;
     margin: 0;
     padding: 0;
@@ -13,7 +13,7 @@ body {
 .container {
     width: calc(100% - 60px);
     max-width: 500px;
-    background: #fff;
+    background-color: #fff;
     padding: 30px;
     border-radius: 12px;
     box-shadow: 0 4px 16px rgba(0,0,0,0.2);
@@ -53,6 +53,9 @@ button[type="submit"]:not(:first-of-type) {
     background-color: #e53935; /* Red */
 }
 
+#syncBtn {
+    background-color: #43a047;
+}
 #stopBtn {
     background-color: #e53935;
 }
@@ -145,7 +148,7 @@ button:hover {
     border: 2px solid #e0e0e0;
     border-radius: 10px;
     padding: 20px;
-    background: #fff;
+    background-color: #fff;
     margin-bottom: 24px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.04);
 }

@@ -784,14 +784,27 @@ def sync():
             sync_collection(plex, headers)
         except TraktAccountLimitError as exc:
             logger.error("Collection sync skipped: %s", exc)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Collection sync failed: %s", exc)
     if SYNC_RATINGS:
-        sync_ratings(plex, headers)
+        try:
+            sync_ratings(plex, headers)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Ratings sync failed: %s", exc)
 
-    plex_movies, plex_episodes = get_plex_history(plex)
+    try:
+        plex_movies, plex_episodes = get_plex_history(plex)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Failed to retrieve Plex history: %s", exc)
+        plex_movies, plex_episodes = {}, {}
     plex_movie_guids = set(plex_movies.keys())
     plex_episode_guids = set(plex_episodes.keys())
 
-    trakt_movies, trakt_episodes = get_trakt_history(headers)
+    try:
+        trakt_movies, trakt_episodes = get_trakt_history(headers)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Failed to retrieve Trakt history: %s", exc)
+        trakt_movies, trakt_episodes = {}, {}
     trakt_movie_guids = set(trakt_movies.keys())
     trakt_episode_guids = set(trakt_episodes.keys())
 
@@ -819,21 +832,31 @@ def sync():
 
     # Permite desactivar la sync de vistos desde la interfaz
     if SYNC_WATCHED:
-        update_trakt(headers, new_movies, new_episodes)
+        try:
+            update_trakt(headers, new_movies, new_episodes)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed updating Trakt history: %s", exc)
     missing_movies = {trakt_movies[g] for g in (trakt_movie_guids - plex_movie_guids)}
     missing_episodes = {trakt_episodes[g] for g in (trakt_episode_guids - plex_episode_guids)}
-    update_plex(plex, missing_movies, missing_episodes)
+    try:
+        update_plex(plex, missing_movies, missing_episodes)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Failed updating Plex history: %s", exc)
 
     if SYNC_LIKED_LISTS:
         try:
             sync_liked_lists(plex, headers, plex_movie_guids)
         except TraktAccountLimitError as exc:
             logger.error("Liked-lists sync skipped: %s", exc)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Liked-lists sync failed: %s", exc)
     if SYNC_WATCHLISTS:
         try:
             sync_watchlist(headers, plex_movie_guids)
         except TraktAccountLimitError as exc:
             logger.error("Watchlist sync skipped: %s", exc)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Watchlist sync failed: %s", exc)
 
     logger.info("Synchronization job finished")
 

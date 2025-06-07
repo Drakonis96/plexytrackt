@@ -12,15 +12,15 @@
 <div class="container">
     <img src="/static/logo.png" alt="Logo" class="logo">
     <h1>Plex/Trakt Sync</h1>
-    <form method="post">
+    <form method="post" class="form-bordered">
         <label for="minutes">Sync every (minutes):</label>
-        <input type="number" id="minutes" name="minutes" min="1" value="{{ minutes }}">
+        <input type="number" id="minutes" name="minutes" min="1" value="{{ minutes }}" class="input-bordered">
         <div class="options">
-            <label><input type="checkbox" name="collection" {% if collection %}checked{% endif %}> Sync collection</label>
-            <label><input type="checkbox" name="ratings" {% if ratings %}checked{% endif %}> Sync ratings</label>
-            <label><input type="checkbox" name="watched" {% if watched %}checked{% endif %}> Sync watched history</label>
-            <label><input type="checkbox" name="liked_lists" {% if liked_lists %}checked{% endif %}> Sync liked lists</label>
-            <label><input type="checkbox" name="watchlists" {% if watchlists %}checked{% endif %}> Sync watchlists</label>
+            <label class="option-label">Sync collection<input type="checkbox" name="collection" {% if collection %}checked{% endif %}></label>
+            <label class="option-label">Sync ratings<input type="checkbox" name="ratings" {% if ratings %}checked{% endif %}></label>
+            <label class="option-label">Sync watched history<input type="checkbox" name="watched" {% if watched %}checked{% endif %}></label>
+            <label class="option-label">Sync liked lists<input type="checkbox" name="liked_lists" {% if liked_lists %}checked{% endif %}></label>
+            <label class="option-label">Sync watchlists<input type="checkbox" name="watchlists" {% if watchlists %}checked{% endif %}></label>
         </div>
         <div style="display: flex; gap: 10px; justify-content: center;">
             <button type="submit">Update</button>

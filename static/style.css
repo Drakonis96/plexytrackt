@@ -60,6 +60,17 @@ button:hover {
     flex-direction: column;
     gap: 8px;
     margin-bottom: 16px;
+    align-items: flex-start;
+}
+
+.option-label {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    font-size: 1em;
+    gap: 10px;
 }
 
 .options label {
@@ -68,10 +79,35 @@ button:hover {
     gap: 8px;
     flex-direction: row;
     margin-bottom: 0;
+    width: 100%;
 }
 
 .options input[type="checkbox"] {
+    margin-left: 10px;
+    margin-right: 0;
     margin: 0 8px 0 0;
+    accent-color: #43a047;
+    width: 18px;
+    height: 18px;
+}
+
+.input-bordered {
+    border: 2px solid #e0e0e0;
+    border-radius: 6px;
+    padding: 8px 12px;
+    background: #fafafa;
+    margin-bottom: 16px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.form-bordered {
+    border: 2px solid #e0e0e0;
+    border-radius: 10px;
+    padding: 20px;
+    background: #fff;
+    margin-bottom: 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
 }
 
 .logo {

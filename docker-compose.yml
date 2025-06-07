@@ -7,6 +7,7 @@ services:
     env_file:
       - .env
     environment:
+      - TZ=${TZ:-Europe/Madrid}
       - PLEX_BASEURL=${PLEX_BASEURL}
       - PLEX_TOKEN=${PLEX_TOKEN}
       - TRAKT_CLIENT_ID=${TRAKT_CLIENT_ID}

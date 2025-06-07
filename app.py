@@ -38,10 +38,11 @@ app = Flask(__name__)
 SYNC_INTERVAL_MINUTES = 60           # default frequency
 SYNC_COLLECTION = True
 SYNC_RATINGS = True
-SYNC_WATCHED = True
+SYNC_WATCHED = True              # ahora sí se respeta este flag
 SYNC_LIKED_LISTS = False
 SYNC_WATCHLISTS = False
 scheduler = BackgroundScheduler()
+plex = None  # will hold PlexServer instance
 
 # --------------------------------------------------------------------------- #
 # TRAKT OAUTH CONSTANTS
@@ -156,33 +157,21 @@ def trakt_movie_key(m: dict) -> Union[str, Tuple[str, Optional[int]]]:
         return f"tmdb://{ids['tmdb']}"
     if ids.get("tvdb"):
         return f"tvdb://{ids['tvdb']}"
-    # Usar solo el título en último término para detectar
-    # la misma película aunque el año no coincida.
+    # Último recurso: título en minúsculas → evita duplicados
     return m["title"].lower()
 
 
 def episode_key(show: str, code: str, guid: Optional[str]) -> Union[str, Tuple[str, str]]:
-    """Return a unique key for comparing episodes."""
-    if guid:
-        return f"{guid}/{code}"
-    return (show, code)
+    """Clave infalible: título (lower) + SxxExx."""
+    return (show.lower(), code)
 
 
 def trakt_episode_key(show: dict, e: dict) -> Union[str, Tuple[str, str]]:
-    """Return a unique key for a Trakt episode object using show GUID."""
-    show_ids = show.get("ids", {})
-    if show_ids.get("imdb"):
-        prefix = f"imdb://{show_ids['imdb']}"
-    elif show_ids.get("tmdb"):
-        prefix = f"tmdb://{show_ids['tmdb']}"
-    elif show_ids.get("tvdb"):
-        prefix = f"tvdb://{show_ids['tvdb']}"
-    else:
-        prefix = None
-
-    if prefix:
-        return f"{prefix}/S{e['season']:02d}E{e['number']:02d}"
-    return (show["title"], f"S{e['season']:02d}E{e['number']:02d}")
+    """Mismo criterio que Plex: título (lower) + SxxExx."""
+    return (
+        show["title"].lower(),
+        f"S{e['season']:02d}E{e['number']:02d}",
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -453,7 +442,12 @@ def update_trakt(
         if guid:
             ep_obj["ids"] = guid_to_ids(guid)
         else:
-            ep_obj["title"] = show           # fallback
+            # Usamos los IDs de la serie para que Trakt encuentre el episodio
+            show_ids = guid_to_ids(best_guid(plex.library.section("TV Shows").get(show)))
+            if show_ids:
+                ep_obj["show"] = {"ids": show_ids}
+            else:
+                ep_obj["title"] = show        # último recurso
         if watched_at:
             ep_obj["watched_at"] = watched_at
         payload["episodes"].append(ep_obj)
@@ -629,6 +623,7 @@ def sync_watchlist(headers, plex_guids):
 # SCHEDULER TASK
 # --------------------------------------------------------------------------- #
 def sync():
+    global plex
     logger.info("Starting synchronization job")
 
     plex_baseurl = os.environ.get("PLEX_BASEURL")
@@ -679,15 +674,16 @@ def sync():
         len(trakt_episodes),
     )
 
+    # — PRECALC — evitamos recomputar en cada iteración
+    trakt_titles = {
+        k.lower() if isinstance(k, str) else k[0].lower() for k in trakt_movies
+    }
+
     def already_on_trakt(d):
-        # 1) GUID encontrado
-        if d["guid"] and d["guid"] in trakt_movie_guids:
-            return True
-        # 2) Coincidencia por título (ignorando mayúsculas/minúsculas)
-        return d["title"].lower() in {
-            k.lower() if isinstance(k, str) else k[0].lower()
-            for k in trakt_movies
-        }
+        """True si la película ya existe en Trakt por GUID o título."""
+        return (d["guid"] and d["guid"] in trakt_movie_guids) or (
+            d["title"].lower() in trakt_titles
+        )
 
     new_movies = [
         (d["title"], d["year"], d["watched_at"], d["guid"])
@@ -705,7 +701,9 @@ def sync():
         if key not in trakt_episodes
     ]
 
-    update_trakt(headers, new_movies, new_episodes)
+    # Permite desactivar la sync de vistos desde la interfaz
+    if SYNC_WATCHED:
+        update_trakt(headers, new_movies, new_episodes)
     missing_movies = {
         trakt_info[k] for k in (trakt_movies - plex_movie_keys) if k in trakt_info
     }

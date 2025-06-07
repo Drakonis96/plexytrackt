@@ -547,6 +547,8 @@ def update_plex(
             movie_count,
             episode_count,
         )
+    else:
+        logger.info("Nothing new to send to Plex.")
 
 
 # --------------------------------------------------------------------------- #
@@ -573,23 +575,102 @@ def sync_collection(plex, headers):
 
 def sync_ratings(plex, headers):
     """Send user ratings from Plex to Trakt."""
-    movies = []
+    movies: List[dict] = []
+    shows: List[dict] = []
+    episodes: List[dict] = []
+
+    rated_now = to_iso_z(datetime.utcnow())
+
     for section in plex.library.sections():
         if section.type == "movie":
             for item in section.all():
                 rating = getattr(item, "userRating", None)
                 if rating is not None:
                     guid = best_guid(item)
-                    obj = {"title": item.title, "rating": int(round(float(rating)))}
+                    obj = {
+                        "title": item.title,
+                        "rating": int(round(float(rating))),
+                        "rated_at": rated_now,
+                    }
                     if getattr(item, "year", None):
                         obj["year"] = normalize_year(item.year)
                     if guid:
                         obj["ids"] = guid_to_ids(guid)
-                    obj["rated_at"] = to_iso_z(datetime.utcnow())
                     movies.append(obj)
+
+        elif section.type == "show":
+            for show in section.all():
+                show_guid = best_guid(show)
+                show_ids = guid_to_ids(show_guid) if show_guid else {}
+                base = {"title": show.title}
+                if getattr(show, "year", None):
+                    base["year"] = normalize_year(show.year)
+                if show_ids:
+                    base["ids"] = show_ids
+
+                seasons_list = []
+                has_show_data = False
+
+                show_rating = getattr(show, "userRating", None)
+                if show_rating is not None:
+                    base["rating"] = int(round(float(show_rating)))
+                    base["rated_at"] = rated_now
+                    has_show_data = True
+
+                for season in show.seasons():
+                    season_rating = getattr(season, "userRating", None)
+                    if season_rating is not None:
+                        seasons_list.append(
+                            {
+                                "number": int(season.index),
+                                "rating": int(round(float(season_rating))),
+                                "rated_at": rated_now,
+                            }
+                        )
+                        has_show_data = True
+
+                    for ep in season.episodes():
+                        ep_rating = getattr(ep, "userRating", None)
+                        if ep_rating is not None:
+                            ep_obj = {
+                                "season": int(season.index),
+                                "number": int(ep.index),
+                                "rating": int(round(float(ep_rating))),
+                                "rated_at": rated_now,
+                            }
+                            ep_guid = best_guid(ep)
+                            if ep_guid:
+                                ep_obj["ids"] = guid_to_ids(ep_guid)
+                            elif show_ids:
+                                ep_obj["show"] = {"ids": show_ids}
+                            else:
+                                ep_obj["title"] = show.title
+                            episodes.append(ep_obj)
+
+                if seasons_list:
+                    base["seasons"] = seasons_list
+
+                if has_show_data:
+                    shows.append(base)
+
+    payload = {}
     if movies:
-        trakt_request("POST", "/sync/ratings", headers, json={"movies": movies})
-        logger.info("Synced %d ratings to Trakt", len(movies))
+        payload["movies"] = movies
+    if shows:
+        payload["shows"] = shows
+    if episodes:
+        payload["episodes"] = episodes
+
+    if payload:
+        trakt_request("POST", "/sync/ratings", headers, json=payload)
+        logger.info(
+            "Synced %d movie ratings, %d shows and %d episode ratings to Trakt",
+            len(movies),
+            len(shows),
+            len(episodes),
+        )
+    else:
+        logger.info("No Plex ratings to sync")
 
 
 def sync_liked_lists(plex, headers, plex_guids):

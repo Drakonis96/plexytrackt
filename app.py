@@ -519,33 +519,55 @@ def update_trakt(
 
 def update_plex(
     plex,
-    movies: Set[Tuple[str, Optional[int]]],
-    episodes: Set[Tuple[str, str]],
+    movies: Set[Tuple[str, Optional[int], Optional[str]]],
+    episodes: Set[Tuple[str, str, Optional[str]]],
 ) -> None:
     """Mark items as watched in Plex when they appear in Trakt but not in Plex."""
     movie_count = 0
     episode_count = 0
 
     # Movies
-    for title, year in movies:
+    for title, year, guid in movies:
+        item = None
+        if guid:
+            try:
+                item = plex.fetchItem(guid)
+            except Exception as exc:
+                logger.debug("GUID fetch failed for %s: %s", guid, exc)
+        if item:
+            item.markWatched()
+            movie_count += 1
+            continue
         try:
             if year:
                 results = plex.library.search(title=title, year=year, libtype="movie")
             else:
                 results = plex.library.search(title=title, libtype="movie")
-            for item in results:
-                item.markWatched()
+            if not results:
+                logger.warning("No match in Plex for %s (%s)", title, year)
+            for it in results:
+                it.markWatched()
                 movie_count += 1
         except BadRequest as exc:
             logger.warning("Plex search error for %s (%s): %s", title, year, exc)
 
     # Episodes
-    for show, code in episodes:
+    for show, code, guid in episodes:
+        item = None
+        if guid:
+            try:
+                item = plex.fetchItem(guid)
+            except Exception as exc:
+                logger.debug("GUID fetch failed for %s: %s", guid, exc)
+        if item:
+            item.markWatched()
+            episode_count += 1
+            continue
         season = int(code[1:3])
         number = int(code[4:6])
         try:
-            # searchShows removed → use generic show search
             series = plex.library.search(title=show, libtype="show")
+            found = False
             for show_obj in series:
                 try:
                     ep = show_obj.episode(season=season, episode=number)
@@ -554,6 +576,9 @@ def update_plex(
                 if ep:
                     ep.markWatched()
                     episode_count += 1
+                    found = True
+            if not found:
+                logger.warning("No match in Plex for %s %s", show, code)
         except BadRequest as exc:
             logger.warning("Plex search error for %s %s: %s", show, code, exc)
 
@@ -728,7 +753,25 @@ def sync_liked_lists(plex, headers, plex_guids):
                 )
                 logger.info("Updated liked list %s with %d movies", slug, len(movies))
             except Exception as exc:
-                logger.error("Failed updating list %s: %s", slug, exc)
+                if hasattr(exc, "response") and getattr(exc.response, "status_code", None) == 404:
+                    try:
+                        trakt_request(
+                            "POST",
+                            f"/users/{username}/lists",
+                            headers,
+                            json={"name": lst.get("name", slug), "description": lst.get("description", ""), "ids": {"slug": slug}},
+                        )
+                        trakt_request(
+                            "POST",
+                            f"/users/{username}/lists/{slug}/items",
+                            headers,
+                            json={"movies": movies},
+                        )
+                        logger.info("Created and updated liked list %s with %d movies", slug, len(movies))
+                    except Exception as exc2:
+                        logger.error("Failed creating list %s: %s", slug, exc2)
+                else:
+                    logger.error("Failed updating list %s: %s", slug, exc)
 
 
 def sync_watchlist(headers, plex_guids):
@@ -836,8 +879,16 @@ def sync():
             update_trakt(headers, new_movies, new_episodes)
         except Exception as exc:  # noqa: BLE001
             logger.error("Failed updating Trakt history: %s", exc)
-    missing_movies = {trakt_movies[g] for g in (trakt_movie_guids - plex_movie_guids)}
-    missing_episodes = {trakt_episodes[g] for g in (trakt_episode_guids - plex_episode_guids)}
+    missing_movies = {
+        (title, year, guid)
+        for guid, (title, year) in trakt_movies.items()
+        if guid not in plex_movie_guids
+    }
+    missing_episodes = {
+        (show, code, guid)
+        for guid, (show, code) in trakt_episodes.items()
+        if guid not in plex_episode_guids
+    }
     try:
         update_plex(plex, missing_movies, missing_episodes)
     except Exception as exc:  # noqa: BLE001
@@ -896,10 +947,11 @@ def index():
         scheduler.remove_all_jobs()
         scheduler.add_job(sync, "interval", minutes=minutes, id="sync_job")
         return redirect(
-            url_for("index", message="Sync settings updated successfully!")
+            url_for("index", message="Sync settings updated successfully!", mtype="success")
         )
 
     message = request.args.get("message")
+    mtype = request.args.get("mtype", "success") if message else None
     return render_template(
         "index.html",
         minutes=SYNC_INTERVAL_MINUTES,
@@ -909,13 +961,14 @@ def index():
         liked_lists=SYNC_LIKED_LISTS,
         watchlists=SYNC_WATCHLISTS,
         message=message,
+        mtype=mtype,
     )
 
 
 @app.route("/stop", methods=["POST"])
 def stop():
     stop_scheduler()
-    return redirect(url_for("index", message="Sync stopped successfully!"))
+    return redirect(url_for("index", message="Sync stopped successfully!", mtype="stopped"))
 
 
 # --------------------------------------------------------------------------- #

@@ -867,7 +867,8 @@ def sync_collections_to_trakt(plex, headers):
 
 def sync_watchlist(plex, headers, plex_history, trakt_history):
     """Two-way sync of Plex and Trakt watchlists."""
-    account = plex.account()
+    # Use MyPlexAccount to access watchlist API
+    account = plex.myPlexAccount()
     try:
         plex_watch = account.watchlist()
     except Exception as exc:

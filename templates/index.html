@@ -2,70 +2,91 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>PlexyTrack</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PlexyTrack - Sync</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Roboto&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
 </head>
 <body>
-<div class="container">
-    <div class="nav">
-        <a href="{{ url_for('index') }}" class="active">Sync</a>
-        <a href="{{ url_for('backup_page') }}">Backup</a>
+    <div class="app-container">
+        <header class="app-header">
+            <img src="{{ url_for('static', filename='logo.png') }}" alt="PlexyTrack Logo" class="logo">
+            <h1>PlexyTrack</h1>
+            <nav class="app-nav">
+                <a href="{{ url_for('index') }}" class="nav-link active">Sync</a>
+                <a href="{{ url_for('backup_page') }}" class="nav-link">Backup</a>
+            </nav>
+        </header>
+
+        <main class="content-area">
+            <section class="sync-settings card">
+                <h2><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="icon"><path d="M12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22ZM12 20C16.4183 20 20 16.4183 20 12C20 7.58172 16.4183 4 12 4C7.58172 4 4 7.58172 4 12C4 16.4183 7.58172 20 12 20ZM13 12H17V14H11V7H13V12Z"></path></svg> Sync Settings</h2>
+                <form method="post" class="sync-form">
+                    <div class="form-group">
+                        <label for="minutes">Sync Interval (minutes):</label>
+                        <input type="number" id="minutes" name="minutes" min="1" value="{{ minutes }}" class="form-input">
+                    </div>
+
+                    <fieldset class="sync-options">
+                        <legend>Sync Options</legend>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="collection" name="collection" {% if collection %}checked{% endif %}>
+                            <label for="collection">Collection</label>
+                        </div>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="ratings" name="ratings" {% if ratings %}checked{% endif %}>
+                            <label for="ratings">Ratings</label>
+                        </div>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="watched" name="watched" {% if watched %}checked{% endif %}>
+                            <label for="watched">Watched History</label>
+                        </div>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="liked_lists" name="liked_lists" {% if liked_lists %}checked{% endif %}>
+                            <label for="liked_lists">Liked Lists</label>
+                        </div>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="watchlists" name="watchlists" {% if watchlists %}checked{% endif %}>
+                            <label for="watchlists">Watchlists</label>
+                        </div>
+                    </fieldset>
+                    
+                    <div class="form-actions">
+                        <button type="submit" id="syncBtn" class="button primary">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="icon"><path d="M12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2ZM10.6212 15.5354L12.0354 16.9496L16.9496 12.0354L15.5354 10.6212L12.0354 14.1212L9.20702 11.2928L7.79281 12.707L10.6212 15.5354Z"></path></svg>
+                            Start Sync
+                        </button>
+                    </div>
+                </form>
+                <form method="post" action="{{ url_for('stop') }}" class="stop-form">
+                    <button type="submit" id="stopBtn" class="button secondary">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="icon"><path d="M12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2ZM12 4C7.58172 4 4 7.58172 4 12C4 16.4183 7.58172 20 12 20C16.4183 20 20 16.4183 20 12C20 7.58172 16.4183 4 12 4ZM9 9H15V15H9V9Z"></path></svg>
+                        Stop Sync
+                    </button>
+                </form>
+            </section>
+
+            {% if next_run %}
+            <div class="status-message info">Next sync scheduled for: {{ next_run }}</div>
+            {% endif %}
+
+            <div id="confirmationMessage" class="status-message {% if mtype == 'success' %}success{% elif mtype == 'stopped' %}error{% endif %}" {% if not message %}style="display:none;"{% endif %}>
+                {{ message }}
+            </div>
+        </main>
+
+        <footer class="app-footer">
+            <p>&copy; 2025 PlexyTrack. All rights reserved.</p>
+        </footer>
     </div>
-    <h1>PlexyTrack</h1>
-    <h2><em>Sync your Plex and Trakt libraries</em></h2>
-    <div class="form-bordered">
-    <form method="post">
-        <label for="minutes">Sync every (minutes):</label>
-        <input type="number" id="minutes" name="minutes" min="1" value="{{ minutes }}" class="input-bordered">
-        
-        <div class="options">
-            <label class="option-label">
-                <span>Sync collection</span>
-                <input type="checkbox" name="collection" {% if collection %}checked{% endif %}>
-            </label>
-            <label class="option-label">
-                <span>Sync ratings</span>
-                <input type="checkbox" name="ratings" {% if ratings %}checked{% endif %}>
-            </label>
-            <label class="option-label">
-                <span>Sync watched history</span>
-                <input type="checkbox" name="watched" {% if watched %}checked{% endif %}>
-            </label>
-            <label class="option-label">
-                <span>Sync liked lists</span>
-                <input type="checkbox" name="liked_lists" {% if liked_lists %}checked{% endif %}>
-            </label>
-            <label class="option-label">
-                <span>Sync watchlists</span>
-                <input type="checkbox" name="watchlists" {% if watchlists %}checked{% endif %}>
-            </label>
-        </div>
-        
-        <div style="display: flex; gap: 10px; justify-content: center;">
-            <button type="submit" id="syncBtn">Sync</button>
-        </div>
-    </form>
-
-    <form method="post" action="{{ url_for('stop') }}" style="margin-top:10px; display:flex; justify-content:center;">
-        <button type="submit" id="stopBtn">Stop Sync</button>
-    </form>
-    </div>
-
-    {% if next_run %}
-    <div class="next-run">Next sync: {{ next_run }}</div>
-    {% endif %}
-
-    <div id="confirmationMessage" class="confirmation-message{% if mtype == 'success' %} success{% elif mtype == 'stopped' %} stopped{% endif %}" {% if not message %}style="display:none;"{% endif %}>{{ message }}</div>
 
     <script>
         const msg = document.getElementById('confirmationMessage');
-        if (msg.textContent.trim() !== '') {
-            setTimeout(function() { msg.style.display = 'none'; }, 3000);
+        if (msg && msg.textContent.trim() !== '') {
+            setTimeout(function() { msg.style.display = 'none'; }, 5000);
         }
     </script>
-</div>
 </body>
 </html>

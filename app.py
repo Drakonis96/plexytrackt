@@ -170,6 +170,24 @@ def get_show_from_library(plex, title):
     return None
 
 
+def find_item_by_guid(plex, guid):
+    """Return a movie or show from Plex matching the given GUID."""
+    for sec in plex.library.sections():
+        if sec.type in ("movie", "show"):
+            try:
+                return sec.getGuid(guid)
+            except Exception:
+                continue
+    return None
+
+def ensure_collection(plex, section, name):
+    """Return a Plex collection with ``name`` creating it if needed."""
+    try:
+        return section.collection(name)
+    except Exception:
+        return plex.createCollection(name, section, items=[])
+
+
 def movie_key(title: str, year: Optional[int], guid: Optional[str]) -> Union[str, Tuple[str, Optional[int]]]:
     """Return a unique key for comparing movies."""
     if guid:
@@ -714,11 +732,9 @@ def sync_ratings(plex, headers):
         logger.info("No Plex ratings to sync")
 
 
-def sync_liked_lists(plex, headers, plex_guids):
-    """Update liked Trakt lists with movies available in Plex."""
+def sync_liked_lists(plex, headers):
+    """Create Plex collections from liked Trakt lists."""
     try:
-        user_data = trakt_request("GET", "/users/settings", headers).json()
-        username = user_data.get("user", {}).get("ids", {}).get("slug") or user_data.get("user", {}).get("username")
         likes = trakt_request("GET", "/users/likes/lists", headers).json()
     except Exception as exc:
         logger.error("Failed to fetch liked lists: %s", exc)
@@ -727,72 +743,224 @@ def sync_liked_lists(plex, headers, plex_guids):
         lst = like.get("list", {})
         owner = lst.get("user", {}).get("ids", {}).get("slug") or lst.get("user", {}).get("username")
         slug = lst.get("ids", {}).get("slug")
+        name = lst.get("name", slug)
         if not owner or not slug:
             continue
         try:
-            items = trakt_request("GET", f"/users/{owner}/lists/{slug}/items/movies", headers).json()
+            items = trakt_request("GET", f"/users/{owner}/lists/{slug}/items", headers).json()
         except Exception as exc:
             logger.error("Failed to fetch list %s/%s: %s", owner, slug, exc)
             continue
-        movies = []
+        movie_items = []
+        show_items = []
         for it in items:
-            ids = it.get("movie", {}).get("ids", {})
-            if ids.get("imdb") and f"imdb://{ids['imdb']}" in plex_guids:
-                movies.append({"ids": {"imdb": ids["imdb"]}})
-            elif ids.get("tmdb") and f"tmdb://{ids['tmdb']}" in plex_guids:
-                movies.append({"ids": {"tmdb": ids["tmdb"]}})
-            elif ids.get("tvdb") and f"tvdb://{ids['tvdb']}" in plex_guids:
-                movies.append({"ids": {"tvdb": ids["tvdb"]}})
-        if movies:
+            data = it.get(it["type"], {})
+            ids = data.get("ids", {})
+            guid = None
+            if ids.get("imdb"):
+                guid = f"imdb://{ids['imdb']}"
+            elif ids.get("tmdb"):
+                guid = f"tmdb://{ids['tmdb']}"
+            if not guid:
+                continue
+            plex_item = find_item_by_guid(plex, guid)
+            if plex_item:
+                if plex_item.TYPE == "movie":
+                    movie_items.append(plex_item)
+                elif plex_item.TYPE == "show":
+                    show_items.append(plex_item)
+        if movie_items or show_items:
+            for sec in plex.library.sections():
+                if sec.type == "movie" and movie_items:
+                    coll = ensure_collection(plex, sec, name)
+                    try:
+                        coll.addItems(movie_items)
+                    except Exception:
+                        pass
+                if sec.type == "show" and show_items:
+                    coll = ensure_collection(plex, sec, name)
+                    try:
+                        coll.addItems(show_items)
+                    except Exception:
+                        pass
+
+def sync_collections_to_trakt(plex, headers):
+    """Create or update Trakt lists from Plex collections."""
+    try:
+        user_data = trakt_request("GET", "/users/settings", headers).json()
+        username = user_data.get("user", {}).get("ids", {}).get("slug") or user_data.get("user", {}).get("username")
+        lists = trakt_request("GET", f"/users/{username}/lists", headers).json()
+    except Exception as exc:
+        logger.error("Failed to fetch Trakt lists: %s", exc)
+        return
+
+    slug_by_name = {l.get("name"): l.get("ids", {}).get("slug") for l in lists}
+
+    for sec in plex.library.sections():
+        if sec.type not in ("movie", "show"):
+            continue
+        for coll in sec.collections():
+            slug = slug_by_name.get(coll.title)
+            if not slug:
+                try:
+                    resp = trakt_request(
+                        "POST",
+                        f"/users/{username}/lists",
+                        headers,
+                        json={"name": coll.title},
+                    )
+                    slug = resp.json().get("ids", {}).get("slug")
+                    slug_by_name[coll.title] = slug
+                except Exception as exc:
+                    logger.error("Failed creating list %s: %s", coll.title, exc)
+                    continue
             try:
-                trakt_request(
-                    "POST",
+                items = trakt_request(
+                    "GET",
                     f"/users/{username}/lists/{slug}/items",
                     headers,
-                    json={"movies": movies},
-                )
-                logger.info("Updated liked list %s with %d movies", slug, len(movies))
+                ).json()
             except Exception as exc:
-                if hasattr(exc, "response") and getattr(exc.response, "status_code", None) == 404:
-                    try:
-                        trakt_request(
-                            "POST",
-                            f"/users/{username}/lists",
-                            headers,
-                            json={"name": lst.get("name", slug), "description": lst.get("description", ""), "ids": {"slug": slug}},
-                        )
-                        trakt_request(
-                            "POST",
-                            f"/users/{username}/lists/{slug}/items",
-                            headers,
-                            json={"movies": movies},
-                        )
-                        logger.info("Created and updated liked list %s with %d movies", slug, len(movies))
-                    except Exception as exc2:
-                        logger.error("Failed creating list %s: %s", slug, exc2)
-                else:
+                logger.error("Failed to fetch list %s items: %s", slug, exc)
+                continue
+            trakt_guids = set()
+            for it in items:
+                data = it.get(it["type"], {})
+                ids = data.get("ids", {})
+                if ids.get("imdb"):
+                    trakt_guids.add(f"imdb://{ids['imdb']}")
+                elif ids.get("tmdb"):
+                    trakt_guids.add(f"tmdb://{ids['tmdb']}")
+            movies = []
+            shows = []
+            for item in coll.items():
+                guid = imdb_guid(item)
+                if not guid or guid in trakt_guids:
+                    continue
+                if item.type == "movie":
+                    movies.append({"ids": guid_to_ids(guid)})
+                elif item.type == "show":
+                    shows.append({"ids": guid_to_ids(guid)})
+            payload = {}
+            if movies:
+                payload["movies"] = movies
+            if shows:
+                payload["shows"] = shows
+            if payload:
+                try:
+                    trakt_request(
+                        "POST",
+                        f"/users/{username}/lists/{slug}/items",
+                        headers,
+                        json=payload,
+                    )
+                    logger.info(
+                        "Updated Trakt list %s with %d items",
+                        slug,
+                        len(movies) + len(shows),
+                    )
+                except Exception as exc:
                     logger.error("Failed updating list %s: %s", slug, exc)
 
 
-def sync_watchlist(headers, plex_guids):
-    """Remove movies from Trakt watchlist that already exist in Plex."""
+def sync_watchlist(plex, headers, plex_history, trakt_history):
+    """Two-way sync of Plex and Trakt watchlists."""
+    account = plex.account()
     try:
-        items = trakt_request("GET", "/sync/watchlist/movies", headers).json()
+        plex_watch = account.watchlist()
+    except Exception as exc:
+        logger.error("Failed to fetch Plex watchlist: %s", exc)
+        plex_watch = []
+    try:
+        trakt_movies = trakt_request("GET", "/sync/watchlist/movies", headers).json()
+        trakt_shows = trakt_request("GET", "/sync/watchlist/shows", headers).json()
     except Exception as exc:
         logger.error("Failed to fetch Trakt watchlist: %s", exc)
         return
+
+    plex_guids = set()
+    for item in plex_watch:
+        g = imdb_guid(item)
+        if g:
+            plex_guids.add(g)
+
+    trakt_guids = set()
+    for lst in (trakt_movies, trakt_shows):
+        for it in lst:
+            ids = it.get(it["type"], {}).get("ids", {})
+            if ids.get("imdb"):
+                trakt_guids.add(f"imdb://{ids['imdb']}")
+            elif ids.get("tmdb"):
+                trakt_guids.add(f"tmdb://{ids['tmdb']}")
+
+    # Add Plex watchlist items to Trakt
+    movies_to_add = []
+    shows_to_add = []
+    for item in plex_watch:
+        guid = imdb_guid(item)
+        if not guid or guid in trakt_guids:
+            continue
+        data = guid_to_ids(guid)
+        if item.TYPE == "movie":
+            movies_to_add.append({"ids": data})
+        elif item.TYPE == "show":
+            shows_to_add.append({"ids": data})
+    payload = {}
+    if movies_to_add:
+        payload["movies"] = movies_to_add
+    if shows_to_add:
+        payload["shows"] = shows_to_add
+    if payload:
+        trakt_request("POST", "/sync/watchlist", headers, json=payload)
+        logger.info("Added %d items to Trakt watchlist", len(movies_to_add) + len(shows_to_add))
+
+    # Add Trakt watchlist items to Plex
+    add_to_plex = []
+    for lst in (trakt_movies, trakt_shows):
+        for it in lst:
+            data = it.get(it["type"], {})
+            ids = data.get("ids", {})
+            guid = None
+            if ids.get("imdb"):
+                guid = f"imdb://{ids['imdb']}"
+            elif ids.get("tmdb"):
+                guid = f"tmdb://{ids['tmdb']}"
+            if not guid or guid in plex_guids:
+                continue
+            item = find_item_by_guid(plex, guid)
+            if item:
+                add_to_plex.append(item)
+    if add_to_plex:
+        try:
+            account.addToWatchlist(add_to_plex)
+            logger.info("Added %d items to Plex watchlist", len(add_to_plex))
+        except Exception as exc:
+            logger.error("Failed adding Plex watchlist items: %s", exc)
+
+    # Remove watched items from watchlists
+    for guid in list(plex_guids):
+        if guid in trakt_history or guid in plex_history:
+            try:
+                item = find_item_by_guid(plex, guid)
+                if item:
+                    account.removeFromWatchlist([item])
+            except Exception:
+                pass
     remove = []
-    for it in items:
-        ids = it.get("movie", {}).get("ids", {})
-        if ids.get("imdb") and f"imdb://{ids['imdb']}" in plex_guids:
-            remove.append({"ids": {"imdb": ids["imdb"]}})
-        elif ids.get("tmdb") and f"tmdb://{ids['tmdb']}" in plex_guids:
-            remove.append({"ids": {"tmdb": ids["tmdb"]}})
-        elif ids.get("tvdb") and f"tvdb://{ids['tvdb']}" in plex_guids:
-            remove.append({"ids": {"tvdb": ids["tvdb"]}})
+    for lst in (trakt_movies, trakt_shows):
+        for it in lst:
+            data = it.get(it["type"], {})
+            ids = data.get("ids", {})
+            guid = None
+            if ids.get("imdb"):
+                guid = f"imdb://{ids['imdb']}"
+            elif ids.get("tmdb"):
+                guid = f"tmdb://{ids['tmdb']}"
+            if guid and (guid in plex_history or guid in trakt_history) and guid not in plex_guids:
+                remove.append({"ids": guid_to_ids(guid)})
     if remove:
-        trakt_request("POST", "/sync/watchlist/remove", headers, json={"movies": remove})
-        logger.info("Removed %d movies from Trakt watchlist", len(remove))
+        trakt_request("POST", "/sync/watchlist/remove", headers, json={"movies": remove, "shows": remove})
+        logger.info("Removed %d items from Trakt watchlist", len(remove))
 
 
 
@@ -896,14 +1064,15 @@ def sync():
 
     if SYNC_LIKED_LISTS:
         try:
-            sync_liked_lists(plex, headers, plex_movie_guids)
+            sync_liked_lists(plex, headers)
+            sync_collections_to_trakt(plex, headers)
         except TraktAccountLimitError as exc:
             logger.error("Liked-lists sync skipped: %s", exc)
         except Exception as exc:  # noqa: BLE001
             logger.error("Liked-lists sync failed: %s", exc)
     if SYNC_WATCHLISTS:
         try:
-            sync_watchlist(headers, plex_movie_guids)
+            sync_watchlist(plex, headers, plex_movie_guids | plex_episode_guids, trakt_movie_guids | trakt_episode_guids)
         except TraktAccountLimitError as exc:
             logger.error("Watchlist sync skipped: %s", exc)
         except Exception as exc:  # noqa: BLE001

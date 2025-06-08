@@ -55,10 +55,18 @@ TRAKT_CLIENT_SECRET=YOUR_TRAKT_CLIENT_SECRET
 TZ=Europe/Madrid
 ```
 
-3. Build and start the application using Docker Compose:
+3. Start the application using Docker Compose. The default `docker-compose.yml`
+   pulls the image from Docker Hub:
 
 ```
-docker-compose up --build
+docker-compose up -d
+```
+
+If you prefer to build the image locally use the `docker-compose-local.yml`
+file:
+
+```
+docker-compose -f docker-compose-local.yml up --build
 ```
 
 4. Visit `http://localhost:5000` in your browser. You can adjust the sync interval on the page and also stop the synchronization job at any time using the **Stop Sync** button. The background job starts automatically when the container is running.

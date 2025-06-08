@@ -10,6 +10,10 @@
 </head>
 <body>
 <div class="container">
+    <div class="nav">
+        <a href="{{ url_for('index') }}" class="active">Sync</a>
+        <a href="{{ url_for('backup_page') }}">Backup</a>
+    </div>
     <h1>PlexyTrack</h1>
     <h2><em>Sync your Plex and Trakt libraries</em></h2>
     <div class="form-bordered">

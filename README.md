@@ -1,6 +1,10 @@
 # PlexyTrack
 
-This project synchronizes your Plex library with Trakt. Besides watched history it can optionally add items to your Trakt collection, sync ratings and watchlists, and now mirrors Trakt lists you like as Plex collections. Collections created in Plex will in turn appear as Trakt lists. A small Flask web interface lets you choose which features to enable and configure the sync interval. Items that are manually marked as watched in Plex are detected as well.
+This project synchronizes your Plex library with Trakt. Besides watched history it can optionally add items to your Trakt collection, sync ratings and watchlists, and now mirrors Trakt lists you like as Plex collections. Collections created in Plex will in turn appear as Trakt lists. A small Flask web interface lets you choose which features to enable and configure the sync interval. Items that are manually marked as watched in Plex are detected as well. The interface also includes a tool for creating backups of your history, watchlist and ratings.
+
+## Disclaimer
+
+This application is currently in testing and is provided **as is**. I take no responsibility for any data loss that may occur when using it. Before you begin, you should use the backup tool to export your history, watchlist and ratings so they can be restored easily from the UI.
 
 ## Requirements
 
@@ -23,6 +27,10 @@ If you don't already have the Trakt credentials, please see the next sections on
 ### Collections and watchlists
 
 If you mark a list as liked on Trakt, PlexyTrack will create a Plex collection with the same name and add the matching movies or shows found in your library. Likewise, any collection created in Plex will be mirrored as a list on Trakt. Watchlists are also kept in sync both ways, so adding or removing an item in one platform is reflected in the other.
+
+### Backup and restore
+
+From the web interface you can download a backup file containing your Trakt history, watchlist and ratings. This JSON file can be uploaded again to restore your data at any time. Creating a backup is recommended before starting synchronization for the first time.
 
 ## Getting a Plex token
 

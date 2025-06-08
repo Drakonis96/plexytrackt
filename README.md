@@ -1,6 +1,6 @@
 # PlexyTrackt
 
-This project synchronizes your Plex library with Trakt. Besides watched history it can optionally add items to your Trakt collection, sync ratings, keep watchlists up to date and import movies from lists you like on Trakt. A small Flask web interface lets you choose which features to enable and configure the sync interval. Items that are manually marked as watched in Plex are detected as well.
+This project synchronizes your Plex library with Trakt. Besides watched history it can optionally add items to your Trakt collection, sync ratings and watchlists, and now mirrors Trakt lists you like as Plex collections. Collections created in Plex will in turn appear as Trakt lists. A small Flask web interface lets you choose which features to enable and configure the sync interval. Items that are manually marked as watched in Plex are detected as well.
 
 ## Requirements
 
@@ -19,6 +19,10 @@ for you.
 The application uses `plexapi` version 4.15 or newer (but below 5).
 
 If you don't already have the Trakt credentials, please see the next sections on how to obtain them.
+
+### Collections and watchlists
+
+If you mark a list as liked on Trakt, PlexyTrackt will create a Plex collection with the same name and add the matching movies or shows found in your library. Likewise, any collection created in Plex will be mirrored as a list on Trakt. Watchlists are also kept in sync both ways, so adding or removing an item in one platform is reflected in the other.
 
 ## Getting a Plex token
 

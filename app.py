@@ -184,12 +184,14 @@ def find_item_by_guid(plex, guid):
     return None
 
 
-def ensure_collection(plex, section, name):
+def ensure_collection(plex, section, name, first_item=None):
     """Return a Plex collection with ``name`` creating it if needed."""
     try:
         return section.collection(name)
     except Exception:
-        return plex.createCollection(name, section, items=[])
+        if first_item is None:
+            raise
+        return plex.createCollection(name, section, items=[first_item])
 
 
 def movie_key(title: str, year: Optional[int], guid: Optional[str]) -> Union[str, Tuple[str, Optional[int]]]:
@@ -773,15 +775,17 @@ def sync_liked_lists(plex, headers):
         if movie_items or show_items:
             for sec in plex.library.sections():
                 if sec.type == "movie" and movie_items:
-                    coll = ensure_collection(plex, sec, name)
+                    coll = ensure_collection(plex, sec, name, first_item=movie_items[0])
                     try:
-                        coll.addItems(movie_items)
+                        if len(movie_items) > 1:
+                            coll.addItems(movie_items[1:])
                     except Exception:
                         pass
                 if sec.type == "show" and show_items:
-                    coll = ensure_collection(plex, sec, name)
+                    coll = ensure_collection(plex, sec, name, first_item=show_items[0])
                     try:
-                        coll.addItems(show_items)
+                        if len(show_items) > 1:
+                            coll.addItems(show_items[1:])
                     except Exception:
                         pass
 

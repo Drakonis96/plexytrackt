@@ -50,6 +50,10 @@
     </form>
     </div>
 
+    {% if next_run %}
+    <div class="next-run">Next sync: {{ next_run }}</div>
+    {% endif %}
+
     <div id="confirmationMessage" class="confirmation-message{% if mtype == 'success' %} success{% elif mtype == 'stopped' %} stopped{% endif %}" {% if not message %}style="display:none;"{% endif %}>{{ message }}</div>
 
     <script>

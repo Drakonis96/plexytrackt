@@ -160,3 +160,9 @@ button:hover {
     max-width: 120px;
     height: auto;
 }
+
+.next-run {
+    margin-top: 15px;
+    text-align: center;
+    font-size: 0.9em;
+}

@@ -1113,19 +1113,23 @@ def index():
         SYNC_WATCHED = request.form.get("watched") is not None
         SYNC_LIKED_LISTS = request.form.get("liked_lists") is not None
         SYNC_WATCHLISTS = request.form.get("watchlists") is not None
-        # Run an immediate synchronization and then schedule the next one
-        sync()
+        # Schedule an immediate sync without blocking the request
         scheduler.add_job(
             sync,
             "interval",
             minutes=minutes,
             id="sync_job",
             replace_existing=True,
+            next_run_time=datetime.now(),
         )
         return redirect(url_for("index", message="Sync started successfully!", mtype="success"))
 
     message = request.args.get("message")
     mtype = request.args.get("mtype", "success") if message else None
+    next_run = None
+    job = scheduler.get_job("sync_job")
+    if job:
+        next_run = job.next_run_time
     return render_template(
         "index.html",
         minutes=SYNC_INTERVAL_MINUTES,
@@ -1136,6 +1140,7 @@ def index():
         watchlists=SYNC_WATCHLISTS,
         message=message,
         mtype=mtype,
+        next_run=next_run,
     )
 
 

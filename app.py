@@ -35,10 +35,10 @@ logger = logging.getLogger(__name__)
 # --------------------------------------------------------------------------- #
 app = Flask(__name__)
 
-SYNC_INTERVAL_MINUTES = 60           # default frequency
+SYNC_INTERVAL_MINUTES = 60  # default frequency
 SYNC_COLLECTION = False
 SYNC_RATINGS = True
-SYNC_WATCHED = True              # ahora sí se respeta este flag
+SYNC_WATCHED = True  # ahora sí se respeta este flag
 SYNC_LIKED_LISTS = False
 SYNC_WATCHLISTS = False
 scheduler = BackgroundScheduler()
@@ -50,12 +50,15 @@ plex = None  # will hold PlexServer instance
 TRAKT_REDIRECT_URI = "urn:ietf:wg:oauth:2.0:oob"
 TOKEN_FILE = "trakt_tokens.json"
 
+
 # --------------------------------------------------------------------------- #
 # CUSTOM EXCEPTIONS
 # --------------------------------------------------------------------------- #
 class TraktAccountLimitError(Exception):
     """Raised when Trakt returns HTTP 420 (account limit exceeded)."""
+
     pass
+
 
 # --------------------------------------------------------------------------- #
 # UTILITIES
@@ -65,20 +68,20 @@ def to_iso_z(value) -> Optional[str]:
     if value is None:
         return None
 
-    if isinstance(value, datetime):                       # datetime / pendulum / arrow
+    if isinstance(value, datetime):  # datetime / pendulum / arrow
         if value.tzinfo is None:
             value = value.replace(tzinfo=timezone.utc)
         return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
-    if isinstance(value, Number):                        # int / float
+    if isinstance(value, Number):  # int / float
         return datetime.utcfromtimestamp(value).isoformat() + "Z"
 
-    if isinstance(value, str):                           # str
-        try:                                             # integer as text
+    if isinstance(value, str):  # str
+        try:  # integer as text
             return datetime.utcfromtimestamp(int(value)).isoformat() + "Z"
         except (TypeError, ValueError):
             pass
-        try:                                             # ISO string
+        try:  # ISO string
             dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
             return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
         except ValueError:
@@ -180,6 +183,7 @@ def find_item_by_guid(plex, guid):
                 continue
     return None
 
+
 def ensure_collection(plex, section, name):
     """Return a Plex collection with ``name`` creating it if needed."""
     try:
@@ -254,9 +258,7 @@ def load_trakt_tokens() -> None:
 def save_trakt_tokens(access_token: str, refresh_token: Optional[str]) -> None:
     try:
         with open(TOKEN_FILE, "w", encoding="utf-8") as f:
-            json.dump(
-                {"access_token": access_token, "refresh_token": refresh_token}, f, indent=2
-            )
+            json.dump({"access_token": access_token, "refresh_token": refresh_token}, f, indent=2)
         logger.info("Saved Trakt tokens to %s", TOKEN_FILE)
     except Exception as exc:
         logger.error("Failed to save Trakt tokens: %s", exc)
@@ -324,7 +326,7 @@ def refresh_trakt_token() -> Optional[str]:
 def trakt_request(method: str, endpoint: str, headers: dict, **kwargs) -> requests.Response:
     url = f"https://api.trakt.tv{endpoint}"
     resp = requests.request(method, url, headers=headers, timeout=30, **kwargs)
-    if resp.status_code == 401:                       # token expired
+    if resp.status_code == 401:  # token expired
         new_token = refresh_trakt_token()
         if new_token:
             headers["Authorization"] = f"Bearer {new_token}"
@@ -345,12 +347,10 @@ def trakt_request(method: str, endpoint: str, headers: dict, **kwargs) -> reques
 # --------------------------------------------------------------------------- #
 # PLEX ↔ TRAKT
 # --------------------------------------------------------------------------- #
-def get_plex_history(
-    plex
-) -> Tuple[
-        Dict[str, Dict[str, Optional[str]]],
-        Dict[str, Dict[str, Optional[str]]],
-    ]:
+def get_plex_history(plex) -> Tuple[
+    Dict[str, Dict[str, Optional[str]]],
+    Dict[str, Dict[str, Optional[str]]],
+]:
     """Return watched movies and episodes from Plex keyed by IMDb or TMDb GUID."""
     movies: Dict[str, Dict[str, Optional[str]]] = {}
     episodes: Dict[str, Dict[str, Optional[str]]] = {}
@@ -433,9 +433,9 @@ def get_plex_history(
 def get_trakt_history(
     headers: dict,
 ) -> Tuple[
-        Dict[str, Tuple[str, Optional[int]]],
-        Dict[str, Tuple[str, str]],
-    ]:
+    Dict[str, Tuple[str, Optional[int]]],
+    Dict[str, Tuple[str, str]],
+]:
     """Return Trakt history keyed by IMDb or TMDb GUID for movies and episodes."""
     movies: Dict[str, Tuple[str, Optional[int]]] = {}
     episodes: Dict[str, Tuple[str, str]] = {}
@@ -518,7 +518,7 @@ def update_trakt(
             if show_ids:
                 ep_obj["show"] = {"ids": show_ids}
             else:
-                ep_obj["title"] = show        # último recurso
+                ep_obj["title"] = show  # último recurso
         if watched_at:
             ep_obj["watched_at"] = watched_at
         payload["episodes"].append(ep_obj)
@@ -613,6 +613,7 @@ def update_plex(
 # --------------------------------------------------------------------------- #
 # ADDITIONAL SYNC FEATURES
 # --------------------------------------------------------------------------- #
+
 
 def sync_collection(plex, headers):
     """Add all Plex movies to the user's Trakt collection."""
@@ -783,6 +784,7 @@ def sync_liked_lists(plex, headers):
                         coll.addItems(show_items)
                     except Exception:
                         pass
+
 
 def sync_collections_to_trakt(plex, headers):
     """Create or update Trakt lists from Plex collections."""
@@ -963,7 +965,6 @@ def sync_watchlist(plex, headers, plex_history, trakt_history):
         logger.info("Removed %d items from Trakt watchlist", len(remove))
 
 
-
 # --------------------------------------------------------------------------- #
 # SCHEDULER TASK
 # --------------------------------------------------------------------------- #
@@ -1048,14 +1049,10 @@ def sync():
         except Exception as exc:  # noqa: BLE001
             logger.error("Failed updating Trakt history: %s", exc)
     missing_movies = {
-        (title, year, guid)
-        for guid, (title, year) in trakt_movies.items()
-        if guid not in plex_movie_guids
+        (title, year, guid) for guid, (title, year) in trakt_movies.items() if guid not in plex_movie_guids
     }
     missing_episodes = {
-        (show, code, guid)
-        for guid, (show, code) in trakt_episodes.items()
-        if guid not in plex_episode_guids
+        (show, code, guid) for guid, (show, code) in trakt_episodes.items() if guid not in plex_episode_guids
     }
     try:
         update_plex(plex, missing_movies, missing_episodes)
@@ -1072,7 +1069,9 @@ def sync():
             logger.error("Liked-lists sync failed: %s", exc)
     if SYNC_WATCHLISTS:
         try:
-            sync_watchlist(plex, headers, plex_movie_guids | plex_episode_guids, trakt_movie_guids | trakt_episode_guids)
+            sync_watchlist(
+                plex, headers, plex_movie_guids | plex_episode_guids, trakt_movie_guids | trakt_episode_guids
+            )
         except TraktAccountLimitError as exc:
             logger.error("Watchlist sync skipped: %s", exc)
         except Exception as exc:  # noqa: BLE001
@@ -1113,13 +1112,16 @@ def index():
         SYNC_WATCHED = request.form.get("watched") is not None
         SYNC_LIKED_LISTS = request.form.get("liked_lists") is not None
         SYNC_WATCHLISTS = request.form.get("watchlists") is not None
-        scheduler.remove_all_jobs()
         # Run an immediate synchronization and then schedule the next one
         sync()
-        scheduler.add_job(sync, "interval", minutes=minutes, id="sync_job")
-        return redirect(
-            url_for("index", message="Sync started successfully!", mtype="success")
+        scheduler.add_job(
+            sync,
+            "interval",
+            minutes=minutes,
+            id="sync_job",
+            replace_existing=True,
         )
+        return redirect(url_for("index", message="Sync started successfully!", mtype="success"))
 
     message = request.args.get("message")
     mtype = request.args.get("mtype", "success") if message else None
@@ -1181,14 +1183,25 @@ def test_connections() -> bool:
 
 def start_scheduler():
     if scheduler.running:
-        if not scheduler.get_job("sync_job"):
-            scheduler.add_job(sync, "interval", minutes=SYNC_INTERVAL_MINUTES, id="sync_job")
-            logger.info("Sync job added with interval %d minutes", SYNC_INTERVAL_MINUTES)
+        scheduler.add_job(
+            sync,
+            "interval",
+            minutes=SYNC_INTERVAL_MINUTES,
+            id="sync_job",
+            replace_existing=True,
+        )
+        logger.info("Sync job added with interval %d minutes", SYNC_INTERVAL_MINUTES)
         return
     if not test_connections():
         logger.error("Connection test failed. Scheduler will not start.")
         return
-    scheduler.add_job(sync, "interval", minutes=SYNC_INTERVAL_MINUTES, id="sync_job")
+    scheduler.add_job(
+        sync,
+        "interval",
+        minutes=SYNC_INTERVAL_MINUTES,
+        id="sync_job",
+        replace_existing=True,
+    )
     scheduler.start()
     logger.info("Scheduler started with interval %d minutes", SYNC_INTERVAL_MINUTES)
 

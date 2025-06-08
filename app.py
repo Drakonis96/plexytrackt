@@ -18,6 +18,7 @@ import time
 
 import requests
 from flask import Flask, render_template, request, redirect, url_for
+from flask import send_file
 from apscheduler.schedulers.background import BackgroundScheduler
 from plexapi.server import PlexServer
 from plexapi.exceptions import BadRequest, NotFound
@@ -1095,6 +1096,148 @@ def sync():
 
 
 # --------------------------------------------------------------------------- #
+# BACKUP HANDLING
+# --------------------------------------------------------------------------- #
+
+def fetch_trakt_history_full(headers) -> list:
+    """Return full watch history from Trakt."""
+    all_items = []
+    page = 1
+    while True:
+        resp = trakt_request(
+            "GET",
+            "/sync/history",
+            headers,
+            params={"page": page, "limit": 100},
+        )
+        data = resp.json()
+        if not data:
+            break
+        all_items.extend(data)
+        page += 1
+    return all_items
+
+
+def fetch_trakt_ratings(headers) -> list:
+    """Return all ratings from Trakt."""
+    all_items = []
+    page = 1
+    while True:
+        resp = trakt_request(
+            "GET",
+            "/sync/ratings",
+            headers,
+            params={"page": page, "limit": 100},
+        )
+        data = resp.json()
+        if not data:
+            break
+        all_items.extend(data)
+        page += 1
+    return all_items
+
+
+def fetch_trakt_watchlist(headers) -> dict:
+    """Return movies and shows from the Trakt watchlist."""
+    movies = trakt_request("GET", "/sync/watchlist/movies", headers).json()
+    shows = trakt_request("GET", "/sync/watchlist/shows", headers).json()
+    return {"movies": movies, "shows": shows}
+
+
+def restore_backup(headers, data: dict) -> None:
+    """Restore Trakt data from backup dict."""
+    history = data.get("history", [])
+    movies = []
+    episodes = []
+    for item in history:
+        if item.get("type") == "movie":
+            m = item.get("movie", {})
+            ids = m.get("ids", {})
+            if ids:
+                obj = {"ids": ids}
+                if item.get("watched_at"):
+                    obj["watched_at"] = item["watched_at"]
+                if m.get("title"):
+                    obj["title"] = m.get("title")
+                if m.get("year"):
+                    obj["year"] = m.get("year")
+                movies.append(obj)
+        elif item.get("type") == "episode":
+            ep = item.get("episode", {})
+            ids = ep.get("ids", {})
+            if ids:
+                obj = {
+                    "ids": ids,
+                    "season": ep.get("season"),
+                    "number": ep.get("number"),
+                }
+                if item.get("watched_at"):
+                    obj["watched_at"] = item["watched_at"]
+                show = item.get("show", {})
+                if show.get("ids"):
+                    obj["show"] = {"ids": show.get("ids")}
+                episodes.append(obj)
+    payload = {}
+    if movies:
+        payload["movies"] = movies
+    if episodes:
+        payload["episodes"] = episodes
+    if payload:
+        trakt_request("POST", "/sync/history", headers, json=payload)
+
+    ratings = data.get("ratings", [])
+    r_movies, r_shows, r_episodes, r_seasons = [], [], [], []
+    for item in ratings:
+        typ = item.get("type")
+        ids = item.get(typ, {}).get("ids", {}) if typ else {}
+        if not ids:
+            continue
+        obj = {"ids": ids, "rating": item.get("rating")}
+        if item.get("rated_at"):
+            obj["rated_at"] = item["rated_at"]
+        if typ == "movie":
+            r_movies.append(obj)
+        elif typ == "show":
+            r_shows.append(obj)
+        elif typ == "season":
+            r_seasons.append(obj)
+        elif typ == "episode":
+            r_episodes.append(obj)
+    payload = {}
+    if r_movies:
+        payload["movies"] = r_movies
+    if r_shows:
+        payload["shows"] = r_shows
+    if r_seasons:
+        payload["seasons"] = r_seasons
+    if r_episodes:
+        payload["episodes"] = r_episodes
+    if payload:
+        trakt_request("POST", "/sync/ratings", headers, json=payload)
+
+    watchlist = data.get("watchlist", {})
+    wl_movies = []
+    for it in watchlist.get("movies", []):
+        m = it.get("movie", {})
+        ids = m.get("ids", {})
+        if ids:
+            wl_movies.append({"ids": ids})
+    wl_shows = []
+    for it in watchlist.get("shows", []):
+        s = it.get("show", {}) if "show" in it else it.get("movie", {})
+        ids = s.get("ids", {})
+        if ids:
+            wl_shows.append({"ids": ids})
+    payload = {}
+    if wl_movies:
+        payload["movies"] = wl_movies
+    if wl_shows:
+        payload["shows"] = wl_shows
+    if payload:
+        trakt_request("POST", "/sync/watchlist", headers, json=payload)
+
+
+# --------------------------------------------------------------------------- #
 # FLASK ROUTES
 # --------------------------------------------------------------------------- #
 @app.route("/", methods=["GET", "POST"])
@@ -1161,6 +1304,67 @@ def index():
 def stop():
     stop_scheduler()
     return redirect(url_for("index", message="Sync stopped successfully!", mtype="stopped"))
+
+
+@app.route("/backup")
+def backup_page():
+    message = request.args.get("message")
+    mtype = request.args.get("mtype", "success") if message else None
+    return render_template("backup.html", message=message, mtype=mtype)
+
+
+@app.route("/backup/download")
+def download_backup():
+    load_trakt_tokens()
+    trakt_token = os.environ.get("TRAKT_ACCESS_TOKEN")
+    trakt_client_id = os.environ.get("TRAKT_CLIENT_ID")
+    if not trakt_token or not trakt_client_id:
+        return redirect(url_for("backup_page", message="Missing Trakt credentials", mtype="error"))
+    headers = {
+        "Authorization": f"Bearer {trakt_token}",
+        "Content-Type": "application/json",
+        "User-Agent": "PlexyTrackt/1.0.0",
+        "trakt-api-version": "2",
+        "trakt-api-key": trakt_client_id,
+    }
+    data = {
+        "history": fetch_trakt_history_full(headers),
+        "ratings": fetch_trakt_ratings(headers),
+        "watchlist": fetch_trakt_watchlist(headers),
+    }
+    tmp_path = "trakt_backup.json"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+    return send_file(tmp_path, as_attachment=True, download_name="trakt_backup.json")
+
+
+@app.route("/backup/restore", methods=["POST"])
+def restore_backup_route():
+    load_trakt_tokens()
+    trakt_token = os.environ.get("TRAKT_ACCESS_TOKEN")
+    trakt_client_id = os.environ.get("TRAKT_CLIENT_ID")
+    if not trakt_token or not trakt_client_id:
+        return redirect(url_for("backup_page", message="Missing Trakt credentials", mtype="error"))
+    headers = {
+        "Authorization": f"Bearer {trakt_token}",
+        "Content-Type": "application/json",
+        "User-Agent": "PlexyTrackt/1.0.0",
+        "trakt-api-version": "2",
+        "trakt-api-key": trakt_client_id,
+    }
+    file = request.files.get("backup")
+    if not file:
+        return redirect(url_for("backup_page", message="No file uploaded", mtype="error"))
+    try:
+        data = json.load(file)
+    except Exception:
+        return redirect(url_for("backup_page", message="Invalid JSON", mtype="error"))
+    try:
+        restore_backup(headers, data)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Failed to restore backup: %s", exc)
+        return redirect(url_for("backup_page", message="Restore failed", mtype="error"))
+    return redirect(url_for("backup_page", message="Backup restored", mtype="success"))
 
 
 # --------------------------------------------------------------------------- #

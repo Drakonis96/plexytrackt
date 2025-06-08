@@ -15,6 +15,7 @@
         <a href="{{ url_for('backup_page') }}" class="active">Backup</a>
     </div>
     <h1>PlexyTrack Backup</h1>
+    <h2><em>Backup your Trakt history, ratings and watchlist</em></h2>
     <div class="form-bordered" style="text-align:center;">
         <a href="{{ url_for('download_backup') }}" class="button" style="margin-bottom:15px;">Download Backup</a>
         <form method="post" action="{{ url_for('restore_backup_route') }}" enctype="multipart/form-data">

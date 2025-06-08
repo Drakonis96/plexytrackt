@@ -14,6 +14,7 @@ import logging
 from datetime import datetime, timezone
 from numbers import Number
 from typing import Dict, List, Optional, Set, Tuple, Union
+import time
 
 import requests
 from flask import Flask, render_template, request, redirect, url_for
@@ -341,6 +342,14 @@ def trakt_request(method: str, endpoint: str, headers: dict, **kwargs) -> reques
         )
         logger.warning(msg)
         raise TraktAccountLimitError(msg)
+
+    if resp.status_code == 429:
+        retry_after = int(resp.headers.get("Retry-After", "1"))
+        logger.warning(
+            "Trakt API rate limit reached. Retrying in %s seconds", retry_after
+        )
+        time.sleep(retry_after)
+        resp = requests.request(method, url, headers=headers, timeout=30, **kwargs)
 
     resp.raise_for_status()
     return resp

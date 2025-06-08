@@ -945,9 +945,11 @@ def index():
         SYNC_LIKED_LISTS = request.form.get("liked_lists") is not None
         SYNC_WATCHLISTS = request.form.get("watchlists") is not None
         scheduler.remove_all_jobs()
+        # Run an immediate synchronization and then schedule the next one
+        sync()
         scheduler.add_job(sync, "interval", minutes=minutes, id="sync_job")
         return redirect(
-            url_for("index", message="Sync settings updated successfully!", mtype="success")
+            url_for("index", message="Sync started successfully!", mtype="success")
         )
 
     message = request.args.get("message")

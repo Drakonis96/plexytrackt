@@ -223,8 +223,16 @@ body {
 .auth-form {
     margin-top: 25px;
     display: flex;
-    justify-content: center; /* Center buttons */
+    justify-content: center; /* Center buttons by default */
     gap: 15px;
+}
+
+/* Align authorization and restore forms with their inputs */
+.restore-form,
+.auth-form {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
 }
 
 .backup-actions {

@@ -247,6 +247,17 @@ form button[type="submit"],
     justify-content: center;
 }
 
+/* Ensure paired buttons share identical dimensions */
+.backup-actions .button,
+.restore-form .button {
+    width: 200px;
+}
+
+.auth-form .button,
+.auth-link.button {
+    width: 220px;
+}
+
 /* Status Messages (Success, Error, Info) */
 .status-message {
     padding: 15px;

@@ -1,4 +1,4 @@
-# PlexyTrackt
+# PlexyTrack
 
 This project synchronizes your Plex library with Trakt. Besides watched history it can optionally add items to your Trakt collection, sync ratings and watchlists, and now mirrors Trakt lists you like as Plex collections. Collections created in Plex will in turn appear as Trakt lists. A small Flask web interface lets you choose which features to enable and configure the sync interval. Items that are manually marked as watched in Plex are detected as well.
 
@@ -22,7 +22,7 @@ If you don't already have the Trakt credentials, please see the next sections on
 
 ### Collections and watchlists
 
-If you mark a list as liked on Trakt, PlexyTrackt will create a Plex collection with the same name and add the matching movies or shows found in your library. Likewise, any collection created in Plex will be mirrored as a list on Trakt. Watchlists are also kept in sync both ways, so adding or removing an item in one platform is reflected in the other.
+If you mark a list as liked on Trakt, PlexyTrack will create a Plex collection with the same name and add the matching movies or shows found in your library. Likewise, any collection created in Plex will be mirrored as a list on Trakt. Watchlists are also kept in sync both ways, so adding or removing an item in one platform is reflected in the other.
 
 ## Getting a Plex token
 
@@ -39,7 +39,7 @@ If you mark a list as liked on Trakt, PlexyTrackt will create a Plex collection 
 1. Log in to your Trakt account and open <https://trakt.tv/oauth/applications>.
 2. Create a new application. Any name will work and you can use `urn:ietf:wg:oauth:2.0:oob` as the redirect URL.
 3. After saving the app you will see a **Client ID** and **Client Secret**. Keep them handy.
-4. Start PlexyTrackt and open `http://localhost:5000` in your browser. The page will provide a link to authorize the application on Trakt. After authorizing, paste the code shown by Trakt into the form. The app will handle exchanging the code for tokens automatically.
+4. Start PlexyTrack and open `http://localhost:5000` in your browser. The page will provide a link to authorize the application on Trakt. After authorizing, paste the code shown by Trakt into the form. The app will handle exchanging the code for tokens automatically.
 
 
 ## Running with Docker Compose

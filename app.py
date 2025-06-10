@@ -1361,8 +1361,15 @@ def sync_collections_to_simkl(plex, headers):
     """Create or update Simkl lists from Plex collections."""
     try:
         user_data = simkl_request("GET", "/users/settings", headers).json()
-        username = user_data.get("user", {}).get("username") or user_data.get("user", {}).get("ids", {}).get("slug")
-        lists = simkl_request("GET", f"/users/{username}/lists", headers).json()
+        username = (
+            user_data.get("user", {}).get("username")
+            or user_data.get("user", {}).get("ids", {}).get("slug")
+        )
+        resp = simkl_request("GET", f"/users/{username}/lists", headers)
+        lists = resp.json()
+        if not isinstance(lists, list):
+            logger.error("Unexpected response when fetching Simkl lists: %s", lists)
+            return
     except Exception as exc:
         logger.error("Failed to fetch Simkl lists: %s", exc)
         return

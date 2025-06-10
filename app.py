@@ -557,6 +557,9 @@ def get_trakt_history(
             params={"page": page, "limit": 100},
         )
         data = resp.json()
+        if not isinstance(data, list):
+            logger.error("Unexpected Simkl history format: %r", data)
+            break
         if not data:
             break
         for item in data:
@@ -662,6 +665,9 @@ def get_simkl_history(
             params={"page": page, "limit": 100},
         )
         data = resp.json()
+        if not isinstance(data, list):
+            logger.error("Unexpected Simkl history format: %r", data)
+            break
         if not data:
             break
         for item in data:

@@ -659,36 +659,35 @@ def get_simkl_history(
     movies: Dict[str, Tuple[str, Optional[int]]] = {}
     episodes: Dict[str, Tuple[str, str]] = {}
 
-    page = 1
     logger.info("Fetching Simkl history…")
-    while True:
-        resp = simkl_request(
-            "GET",
-            "/sync/history",
-            headers,
-            params={"page": page, "limit": 100},
-        )
-        data = resp.json()
-        if not isinstance(data, list):
-            logger.error("Unexpected Simkl history format: %r", data)
-            break
-        if not data:
-            break
-        for item in data:
-            if item.get("type") == "movie":
-                m = item.get("movie", {})
-                ids = m.get("ids", {})
-                guid = None
-                if ids.get("imdb"):
-                    guid = f"imdb://{ids['imdb']}"
-                elif ids.get("tmdb"):
-                    guid = f"tmdb://{ids['tmdb']}"
-                if guid and guid not in movies:
-                    movies[guid] = (m.get("title", ""), normalize_year(m.get("year")))
-            elif item.get("type") == "episode":
-                e = item.get("episode", {})
-                show = item.get("show", {})
-                ids = e.get("ids", {})
+    resp = simkl_request(
+        "GET",
+        "/sync/get-all-items",
+        headers,
+        params={"extended": "full", "episode_watched_at": "yes"},
+    )
+    data = resp.json()
+
+    if not isinstance(data, dict):
+        logger.error("Unexpected Simkl history format: %r", data)
+        return movies, episodes
+
+    for m in data.get("movies", []):
+        ids = m.get("ids", {})
+        guid = None
+        if ids.get("imdb"):
+            guid = f"imdb://{ids['imdb']}"
+        elif ids.get("tmdb"):
+            guid = f"tmdb://{ids['tmdb']}"
+        if guid and guid not in movies:
+            movies[guid] = (m.get("title", ""), normalize_year(m.get("year")))
+
+    for show in data.get("shows", []):
+        title = show.get("title", "")
+        for season in show.get("seasons", []):
+            s_num = season.get("number")
+            for ep in season.get("episodes", []):
+                ids = ep.get("ids", {})
                 guid = None
                 if ids.get("imdb"):
                     guid = f"imdb://{ids['imdb']}"
@@ -696,10 +695,9 @@ def get_simkl_history(
                     guid = f"tmdb://{ids['tmdb']}"
                 if guid and guid not in episodes:
                     episodes[guid] = (
-                        show.get("title", ""),
-                        f"S{e.get('season'):02d}E{e.get('number'):02d}",
+                        title,
+                        f"S{s_num:02d}E{ep.get('number'):02d}",
                     )
-        page += 1
 
     return movies, episodes
 
@@ -1747,7 +1745,7 @@ def test_connections() -> bool:
             "simkl-api-key": simkl_client_id,
         }
         try:
-            simkl_request("GET", "/sync/history", s_headers, params={"limit": 1})
+            simkl_request("GET", "/sync/get-all-items", s_headers)
             logger.info("Successfully connected to Simkl.")
         except Exception as exc:
             logger.error("Failed to connect to Simkl: %s", exc)

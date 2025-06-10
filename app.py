@@ -1211,21 +1211,28 @@ def sync():
     trakt_client_id = os.environ.get("TRAKT_CLIENT_ID")
     simkl_token = os.environ.get("SIMKL_ACCESS_TOKEN")
     simkl_client_id = os.environ.get("SIMKL_CLIENT_ID")
+
+    trakt_enabled = bool(trakt_token and trakt_client_id)
     simkl_enabled = bool(simkl_token and simkl_client_id)
 
-    if not all([plex_baseurl, plex_token, trakt_token, trakt_client_id]):
-        logger.error("Missing environment variables for Plex or Trakt.")
+    if not all([plex_baseurl, plex_token]):
+        logger.error("Missing environment variables for Plex.")
+        return
+    if not (trakt_enabled or simkl_enabled):
+        logger.error("Missing environment variables for Trakt or Simkl.")
         return
 
     plex = PlexServer(plex_baseurl, plex_token)
 
-    headers = {
-        "Authorization": f"Bearer {trakt_token}",
-        "Content-Type": "application/json",
-        "User-Agent": "PlexyTrackt/1.0.0",
-        "trakt-api-version": "2",
-        "trakt-api-key": trakt_client_id,
-    }
+    headers = None
+    if trakt_enabled:
+        headers = {
+            "Authorization": f"Bearer {trakt_token}",
+            "Content-Type": "application/json",
+            "User-Agent": "PlexyTrackt/1.0.0",
+            "trakt-api-version": "2",
+            "trakt-api-key": trakt_client_id,
+        }
     simkl_headers = None
     if simkl_enabled:
         simkl_headers = {
@@ -1234,14 +1241,14 @@ def sync():
             "simkl-api-key": simkl_client_id,
         }
 
-    if SYNC_COLLECTION:
+    if SYNC_COLLECTION and trakt_enabled:
         try:
             sync_collection(plex, headers)
         except TraktAccountLimitError as exc:
             logger.error("Collection sync skipped: %s", exc)
         except Exception as exc:  # noqa: BLE001
             logger.error("Collection sync failed: %s", exc)
-    if SYNC_RATINGS:
+    if SYNC_RATINGS and trakt_enabled:
         try:
             sync_ratings(plex, headers)
         except Exception as exc:  # noqa: BLE001
@@ -1255,13 +1262,18 @@ def sync():
     plex_movie_guids = set(plex_movies.keys())
     plex_episode_guids = set(plex_episodes.keys())
 
-    try:
-        trakt_movies, trakt_episodes = get_trakt_history(headers)
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Failed to retrieve Trakt history: %s", exc)
+    if trakt_enabled:
+        try:
+            trakt_movies, trakt_episodes = get_trakt_history(headers)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed to retrieve Trakt history: %s", exc)
+            trakt_movies, trakt_episodes = {}, {}
+        trakt_movie_guids = set(trakt_movies.keys())
+        trakt_episode_guids = set(trakt_episodes.keys())
+    else:
         trakt_movies, trakt_episodes = {}, {}
-    trakt_movie_guids = set(trakt_movies.keys())
-    trakt_episode_guids = set(trakt_episodes.keys())
+        trakt_movie_guids = set()
+        trakt_episode_guids = set()
 
     if simkl_enabled:
         try:
@@ -1281,11 +1293,12 @@ def sync():
         len(plex_movie_guids),
         len(plex_episode_guids),
     )
-    logger.info(
-        "Trakt history:  %d movies, %d episodes",
-        len(trakt_movie_guids),
-        len(trakt_episode_guids),
-    )
+    if trakt_enabled:
+        logger.info(
+            "Trakt history:  %d movies, %d episodes",
+            len(trakt_movie_guids),
+            len(trakt_episode_guids),
+        )
     if simkl_enabled:
         logger.info(
             "Simkl history:  %d movies, %d episodes",
@@ -1307,7 +1320,8 @@ def sync():
     # Permite desactivar la sync de vistos desde la interfaz
     if SYNC_WATCHED:
         try:
-            update_trakt(headers, new_movies, new_episodes)
+            if trakt_enabled:
+                update_trakt(headers, new_movies, new_episodes)
             if simkl_enabled:
                 update_simkl(simkl_headers, new_movies, new_episodes)
         except Exception as exc:  # noqa: BLE001
@@ -1342,7 +1356,7 @@ def sync():
     except Exception as exc:  # noqa: BLE001
         logger.error("Failed updating Plex history: %s", exc)
 
-    if SYNC_LIKED_LISTS:
+    if SYNC_LIKED_LISTS and trakt_enabled:
         try:
             sync_liked_lists(plex, headers)
             sync_collections_to_trakt(plex, headers)
@@ -1350,7 +1364,7 @@ def sync():
             logger.error("Liked-lists sync skipped: %s", exc)
         except Exception as exc:  # noqa: BLE001
             logger.error("Liked-lists sync failed: %s", exc)
-    if SYNC_WATCHLISTS:
+    if SYNC_WATCHLISTS and trakt_enabled:
         try:
             sync_watchlist(
                 plex,
@@ -1740,10 +1754,15 @@ def test_connections() -> bool:
     trakt_client_id = os.environ.get("TRAKT_CLIENT_ID")
     simkl_token = os.environ.get("SIMKL_ACCESS_TOKEN")
     simkl_client_id = os.environ.get("SIMKL_CLIENT_ID")
+
+    trakt_enabled = bool(trakt_token and trakt_client_id)
     simkl_enabled = bool(simkl_token and simkl_client_id)
 
-    if not all([plex_baseurl, plex_token, trakt_token, trakt_client_id]):
-        logger.error("Missing environment variables for Plex or Trakt.")
+    if not all([plex_baseurl, plex_token]):
+        logger.error("Missing environment variables for Plex.")
+        return False
+    if not (trakt_enabled or simkl_enabled):
+        logger.error("Missing environment variables for Trakt or Simkl.")
         return False
 
     try:
@@ -1753,19 +1772,20 @@ def test_connections() -> bool:
         logger.error("Failed to connect to Plex: %s", exc)
         return False
 
-    headers = {
-        "Authorization": f"Bearer {trakt_token}",
-        "Content-Type": "application/json",
-        "User-Agent": "PlexyTrackt/1.0.0",
-        "trakt-api-version": "2",
-        "trakt-api-key": trakt_client_id,
-    }
-    try:
-        trakt_request("GET", "/users/settings", headers)
-        logger.info("Successfully connected to Trakt.")
-    except Exception as exc:
-        logger.error("Failed to connect to Trakt: %s", exc)
-        return False
+    if trakt_enabled:
+        headers = {
+            "Authorization": f"Bearer {trakt_token}",
+            "Content-Type": "application/json",
+            "User-Agent": "PlexyTrackt/1.0.0",
+            "trakt-api-version": "2",
+            "trakt-api-key": trakt_client_id,
+        }
+        try:
+            trakt_request("GET", "/users/settings", headers)
+            logger.info("Successfully connected to Trakt.")
+        except Exception as exc:
+            logger.error("Failed to connect to Trakt: %s", exc)
+            return False
 
     if simkl_enabled:
         s_headers = {

@@ -16,15 +16,18 @@ The application expects the following API credentials:
 
 - `PLEX_BASEURL` – URL of your Plex server, e.g. `http://localhost:32400`.
 - `PLEX_TOKEN` – your Plex authentication token.
-- `TRAKT_CLIENT_ID` – client ID for your Trakt application.
-- `TRAKT_CLIENT_SECRET` – client secret from your Trakt application.
-- `SIMKL_CLIENT_ID` – client ID for your Simkl application (optional).
-- `SIMKL_CLIENT_SECRET` – client secret for your Simkl application (optional).
+- `TRAKT_CLIENT_ID` – client ID for your Trakt application (optional if only using Simkl).
+- `TRAKT_CLIENT_SECRET` – client secret from your Trakt application (optional if only using Simkl).
+- `SIMKL_CLIENT_ID` – client ID for your Simkl application (optional if only using Trakt).
+- `SIMKL_CLIENT_SECRET` – client secret for your Simkl application (optional if only using Trakt).
 - `TRAKT_REDIRECT_URI` – OAuth redirect URI for Trakt (defaults to
   `http://localhost:5000/oauth/trakt`).
 - `SIMKL_REDIRECT_URI` – OAuth redirect URI for Simkl (defaults to
   `http://localhost:5000/oauth/simkl`).
 - `TZ` – timezone for log timestamps, defaults to `Europe/Madrid`.
+
+You must set the Plex variables above and at least one pair of Trakt or Simkl
+credentials. Leave the variables for the service you are not using unset.
 
 You do **not** need to provide a Trakt access token or refresh token. The web
 interface will guide you through authorizing the app and will store the tokens
@@ -40,7 +43,7 @@ settings and in the environment variables `TRAKT_REDIRECT_URI` and
 
 The application uses `plexapi` version 4.15 or newer (but below 5).
 
-If you don't already have the Trakt credentials, please see the next sections on how to obtain them.
+If you don't already have the Trakt or Simkl credentials, please see the next sections on how to obtain them.
 
 ### Collections and watchlists
 
@@ -107,6 +110,6 @@ docker-compose -f docker-compose-local.yml up --build
 
 4. Visit `http://localhost:5000` in your browser. You can adjust the sync interval on the page and also stop the synchronization job at any time using the **Stop Sync** button. The background job starts automatically when the container is running.
 
-That's it! The container will continue to sync your Plex and Trakt accounts according to the interval you set.
+That's it! The container will continue to sync your Plex account with Trakt and/or Simkl according to the interval you set.
 
 

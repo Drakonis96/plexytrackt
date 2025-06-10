@@ -1,0 +1,434 @@
+Simkl APIIntroduction
+Simkl	We’ve worked very hard to make Simkl the dream "TV, Anime and Movie Tracker". However, chances are it doesn’t do 100% of what you need it to do. Luckily for you, we added an API so you can extend Simkl’s functionality.
+
+If you need some API method which we do not have, do not hesitate to contact us and we'll add it as soon as possible.
+
+Useful Links:
+Simkl.com   ∙   Get an API key   ∙   Feature Requests   ∙   Discord Server   ∙   Report Issues   ∙   Twitter
+Getting StartedThis guide will walk you through how to use Simkl API on your website, media server app, browser extension or in your mobile app.Before You StartTo successfully start using Simkl API, you need to:Sign up for a Simkl account.Create a new app in your account to get your API key (client_id).Join the Discord Server to chat
+
+Join the community to talk, learn about and discuss the Simkl APIs. Or DM directly on Discord.Requirements1. When using the API, a link is required back to https://simkl.com/ or directly to an item related to the API request. If not sure how to implement, let us know at support@simkl.com or DM directly on Discord.2. The Simkl API is not authorized for use in conjunction with other competing services of the same nature if your service or app does not provide Simkl login and Sync functionality with Simkl, including but not limited to TV, Movie, Anime, Manga list/tracker services. If you are interested in using this service within your own application or website, please contact us at though our Discord and we will be happy to discuss it further!What this means is that you cannot use parts of the API that don't involve tracking unless you integrate the option to sync with Simkl, especially if your app already has sync functionality with other trackers.3. Please use TVDB, TMDB API from their original sources if your need metadata API.4. If you're using Github, it is important to hide your Client-ID and secrets in Github Secrets to avoid any API request limit issues.5. Free for non-commercial use. (See commercial usage below).The Simkl API can be used within commercial applications or services that generate less than $150 per month in revenue free of charge, without explicitly requesting permission. Any application or service that generates more than $150 in revenue per month must obtain a commercial license. Those who wish to acquire a commercial license or more information regarding commercial API usage may reach us through the Discord server.Running the API inside your app with large amount of requests costs us fees in DNS, Routing, Health checks, CDN, Server Hosting, Failover backups and Server management so if you have large amount of requests you need to be able to cover them financially.How to use the APIGet user's token using OAuth or PIN Authentication and save it on user's device.Post API requests with the user's token and your API Key (client_id)
+
+
+
+About Simkl APIAll API access is over HTTPS. All responses are returned as JSON. The API is (mostly) RESTful.
+Please contact us if you're interested in an API we don't yet support.Here's what you need to know to get started quickly:Use CasesThe Simkl API lets you build a variety of applications and scripts to integrate Simkl with your apps, show Simkl data in other contexts, and update your watch history from various locations.Here are some examples of the things you can build with the Simkl API:A browser extension to quickly mark as watched or add to your watchlist from any web page.A Movie, TV or Anime app for iOS or Android.Plugin for your favorite media center app to sync your watch history with Simkl.Api URLhttps://api.simkl.com/Verbs
+HTTP Verb	Description
+GET	Retrieve the item. Success returns 200 status code.
+POST	Create a new item. Success returns 201 status code.
+DELETE	Delete the item. Success returns 200 or 204 status code.
+HTTP Status CodesThe Simkl API attempts to return appropriate HTTP status codes for every request.
+Code	Text	Description
+200	OK	Success!
+201	OK	Success - new resource created (POST)
+204	OK	Success - no content to return (DELETE)
+302	Found	Redirected to correct URL
+400	Bad Request	The request was invalid or cannot be otherwise served. An accompanying error message will explain further.
+401	Unauthorized	Authentication credentials were missing or incorrect.
+403	Forbidden	The request is understood, but it has been refused or access is not allowed. An accompanying error message will explain why. This code is used whe using invalid API key or unapproved app or requests are being denied due to API limits.
+404	Not Found	The URI requested is invalid or the resource requested. Also returned when the requested format is not supported by the requested method.
+405	Not Found	[IN_DEV]
+409	Unauthorized	[IN_DEV] Conflict - resource already created
+412	client_id_failed	incorrect cliend_id or Total Requests Limit Exceeded
+422	[IN_DEV]	[IN_DEV]
+429	[IN_DEV]	Rate Limit Exceeded
+500	Internal Server Error	Something is broken. Please post to the developer discord so the Simkl team can investigate.
+502	Bad Gateway	Simkl is down or being upgraded.
+503	Service Unavailable	The Simkl servers are up, but overloaded with requests. Try again later.
+Required HeadersWhen making API calls you'lll need to send some headers to identify your app.
+Header	Value
+Content-Type *	application/json
+simkl-api-key *	Your client_id listed under your Simkl applications.
+Full InfoBy default methods are not returnig additional data for movies, anime, show etc. They return minimal info you need to match in the local database. But, if you need more information just add extended={fields} to the URL.
+Fields	Description
+full	Complete info, except discover endpoints
+title,slug,overview,metadata,theater,genres,tmdb	Possible comma separated values for the Discover endpoints.
+theater value requires &user-country=us variable, otherwise US country will be taken.
+Dates[In Development] Currently dates are returned as (GMT - 05:00 New York time zone)All dates will be GMT and returned in the ISO 8601 format like 2015-03-15T15:30:11Z. Adjust accordingly in your app for the user's local timezone.PaginationSome of our endpoints are paginated. Endpoints which have 📄 Pagination will load 1 page of 10 items by default. If you want to change this, append query string ?page={page}&limit={limit} to the URL
+Parameter	Type	Default	Value
+page	integer	1	Number of page
+limit	integer	10	Results per page
+additionally, all paginated endpoints will return these HTTP headers as well
+Header	Value
+X-Pagination-Page	Current page
+X-Pagination-Limit	Items per page
+X-Pagination-Page-Count	Total number of pages
+X-Pagination-Item-Count	Total number of items
+ImagesUse https://wsrv.nl/?url=https://simkl.in domain for images.It is preffered to use https://wsrv.nl/ service to minimise traffic to our servers. As an extra bonus WSRV provides options to resize and cut images as you need them.We have different types of images, choose the one that best suits your needs.
+JSON DATA	Prefix URL
+poster	/posters/
+fanart	/fanart/
+episode	/episodes/
+avatars	/avatars/
+[IN DEV]	/comments/
+Url structure: {domain}{prefix}{image_url}{suffix}{extension}
+prefix	suffix	Size	extension	Example
+posters	_w (landscape, cropped}	600x338	.jpg or .webp	Example
+posters	_m	340x *	.jpg or .webp	Example
+posters	_ca	190x279(285)	.jpg or .webp	Example
+posters	_c	170x250(256)	.jpg or .webp	Example
+posters	_cm	84x124	.jpg or .webp	Example
+posters	_s	40x57	.jpg or .webp	Example
+fanart	_d (darker, small KB)	* x * (original size)	.jpg	Example
+fanart	_medium	1920x1080	.jpg or .webp	Example
+fanart	_mobile	960x540	.jpg or .webp	Example
+fanart	_w	600x338	.jpg or .webp	Example
+fanart	_s48	48x27	.jpg or .webp	Example
+episodes	_w	600x338	.jpg or .webp	Example
+episodes	_c	210x118	.jpg or .webp	Example
+episodes	_m	112x63	.jpg or .webp	Example
+avatars	_24	24x24	.jpg	Example
+avatars	_100	100x100	.jpg	Example
+avatars		200x200	.jpg	Example
+avatars	_256	256x256	.jpg	Example
+avatars	_512	512x512	.jpg	Example
+Caching imagesIt is required that you cache images in your app or server by image_url forever. The images with the same URL never change. Do not redownload the same image multiple times.Standard Media ObjectsAll methods will accept or return standard media objects for movie, show, episode items.Anime can has anime_type with possible values tv|movie|special|ova|ona|music video.Here are examples for all objects:
+movie	Movie example:{
+    "title":"Terminator 3: Rise of the Machines",
+    "year":2003,
+    "ids":{
+        "simkl":53536,
+        "imdb":"tt0181852",
+        "tmdb":296
+    }
+}Example when only id is known:{
+    "ids":{
+        "simkl":53536
+    }
+}
+show	TV Show example:"title":"The Walking Dead",
+    "year":2010,
+    "ids":{
+        "simkl":2090,
+        "tvdb":153021,
+        "imdb":"tt1520211"
+    },
+    "seasons": [
+            {
+                "number": 1,
+                "episodes": [
+                    {
+                        "number": 1
+                    },
+                    {
+                        "number": 2
+                    }
+                ]
+            }
+        ]
+    ]
+}Anime example:{
+    "title": "Attack on Titan",
+    "year": 2013,
+    "ids": {
+        "simkl": 39687,
+        "mal": 16498,
+        "tvdb": 267440,
+        "imdb": "tt2560140",
+        "anidb": 9541
+    },
+    "episodes": [
+        {
+            "number": 1
+        },
+        {
+            "number": 2
+        }
+    ]
+}
+episode	Episode example:{
+    {
+        "watched_at": "2014-09-01T09:10:11Z",
+        "ids": {
+            "simkl": 231223,
+            "hulu": 681868,
+            "crunchyroll": 656647
+        }
+    }
+}
+API Terms of UseThank you for using the Simkl application programming interfaces (the "Simkl APIs"). By using the Simkl APIs, you UNCONDITIONALLY CONSENT AND AGREE TO BE BOUND BY AND A PARTY TO THE TERMS AND CONDITIONS LISTED AT https://simkl.com/about/policies/terms/api/ and also agree to display information about Simkl in all parts of your application or website where Simkl API or content from Simkl API is used as deemed necessary by request of Simkl Team. If you disagree with any of these terms, Simkl does not grant you a license to use the Simkl APIs.Help us improve!If you find any error or omission on the documentation, or you’d like us to cover or clarify something, just let us know and we’ll try to make you happy. You are also welcome to join our development community.
+
+ReferenceAuthentication - OAuth 2.0There's no reinventing the wheel here so the API uses OAuth2.Requesting user associated information requires token that needs to be included in all request headers made to the API.To obtain the client_id and client_secret please create an app first.To make calls on behalf of a user you have to obtain an access_token. To do this, first use https://simkl.com/oauth/authorize method to get code and then post it in JSON format to https://api.simkl.com/oauth/token url. In response you'll get the access_token. For more details see Authorize and Token sections below.So STEP 1 for OAuth - Open the URL that looks like this in your Browser or in a Custom Tab (do not use WebView) on mobile device from your app:Request https://simkl.com/oauth/authorize?response_type=code&client_id=c7be48f1559a6d794w1925237c626326c7bsdfsa559a6d794w1925137c626316&redirect_uri=http://yourdomain.com/oauth.htmlResponse 200It will redirect back to your website or app URL with ?code at the end of your Redirect URL.
+Authorize
+Authorize Application
+Redirect a user to this URL. There the user will grant permissions for you app and if everything is fine you'll get a code which you can exchange for access_token. Once you have an access token you can use it to make calls on behalf of a user.Note: You should use the https://simkl.com domain when creating this URL and not the API URL.Token
+Exchange code for access_token
+STEP 2: The redirect to your application in the step above will include a code parameter which you can exchange for an access_token using this method.Save the access_token somewhere safe. From that moment your app can authenticate the user by sending the Authorization header.JSON POST DATA
+Key	Type	Value
+code	string	code you've get from authorize method
+client_id	string	Get this in your app settings
+client_secret	string	Get this in your app settings
+redirect_uri	string	Your URI in your app settings
+grant_type	string	authorization_code
+access_token do not have expiration date (Never expire).access_token can be deleted by user when revoking app access rights in Connected Apps settings.
+Authentication - PINThis flow is designed for devices that have limited input capabilities, such as media center plugins, game consoles, smart watches, smart TVs, command line scripts, and system services, etc. Your app displays an alphanumeric code (typically 5 characters) to the user. They are then instructed to visit the verification URL on their computer or mobile device. After entering the code, the user will be prompted to grant permission for your app. After your app gets permissions, the device receives an access_token and works like standard OAuth from that point on.You should do the following step to authorize user's device:Request a device code.Display user_code and instruct the user to visit the verification_url.Simkl PINBegin polling Simkl's authorization server.User enters user_code at the verification_url on their computer or mobile device.Simkl returns access_token to the device where the polling is in progress. Your app will be polling to see if the user successfully authorizes your app. Use expires_in to stop polling after that many seconds, and gracefully instruct the user to restart the process. It is important to poll at the correct interval and also stop polling when expired.Once they have, refresh your UI to indicate a successful connection has been made.
+Request a device code
+Get CODE
+In response you'll get user_code and verification_url (in most cases https://simkl.com/pin/) which should be displayed to the user. Store expires_in and interval values for step 3.JSON POST DATA
+Key	Type	Value
+client_id	string	Get this in your app settings
+Get CODE status
+Check USER_CODE
+Application can poll this url to get USER_CODE status or ACCESS_TOKEN. Returned interval in step 1 response specifies the minimum amount of time(seconds), that your app should wait between polling requests.
+CalendarSimkl provides separate JSON data calendar files that can be used to display the "Upcoming", "Next", "Schedule" or "Calendar" sections in your app or within show details cards.The calendar files are generated every 6 hours and are cached on a CDN for 5 hours (you can check the last-modified HTTP Headers for the file generation date).The files URLs ignore all query strings, so do not add any additional parameters (such as ?random=***).How to use calendar dataYou can use the calendar data to create lists of upcoming episodes, premieres (e.g. S01E01), or movies by combining it with your existing lists or using the user lists obtained from the Sync endpoints.Example: When a user opens their watchlist, you can add the calendar data to show that the next episode will air in 3 days, without the need to re-sync the user's list. Simply get fresh calendar files and cache them for 3-6 hours on the user's device.List of Calendar Data FilesAiring NextFind out when the next episodes or movie releases are happening:https://data.simkl.in/calendar/tv.json
+https://data.simkl.in/calendar/anime.json
+https://data.simkl.in/calendar/movie_release.jsonThe calendar files contain episode airing dates (for TV, Anime) and theater release dates (for Movies) for the previous day as well as the next 33 days.Monthly Calendar Data FilesWe update calendars for the past 12 months every 24 hours, and for the current month every 6 hours.Examples for January 2024:https://data.simkl.in/calendar/2024/1/tv.json
+https://data.simkl.in/calendar/2024/1/anime.json
+https://data.simkl.in/calendar/2024/1/movie_release.jsonAll calendar items have Simkl rank and ratings, poster images, as well as SIMKL, TVDB, TMDB, IMDB, and MAL IDs where available.
+CheckinMobile apps can do checkin manually. If you are curretlty watching a movie or an episode you can simply do checkin from your phone or tablet and the episode will be automatically marked as watched in 15-40 minutes (based on the episode\movie lenth).If you wish to instantly mark episode\movie as watched please use Sync, Add to History method
+Checkin
+Check into an item
+🔒 Token RequiredThis should be tied to a user manual action. The item will be as watching on the site and if the time has elapsed it will switch to completed.Pass as much data as possible into the item including title, year and ids fields so Simkl could detect the item better.JSON POST DATA
+Key	Type	Value
+item*	object	episode or movie object.
+Note: If there is checkin in progress, 409 code will be returned and response will contain an expires_at datetime when you will be able to ckeckin again.
+RatingsThe Simkl Ratings API allows you to retrieve Simkl average rating information (0–10), ranks, external ratings (e.g. IMDB, MAL), drop rates, and trailer availability for movies, TV shows, and anime on Simkl.
+Ratings by ID
+Get movie, TV show, or anime rating
+🔓 Token Not RequiredYou only need to supply a valid client_id obtained from your App Settings.Use this endpoint to retrieve rating information by providing a Simkl ID. You can request additional fields, such as external ratings (IMDB, MAL), trailer availability, etc.Ratings by Watchlist
+Get ratings for the watchlist's items
+🔓 Token RequiredWhen to use it:Use this endpoint when you need updated ratings or release status for items in a user’s watchlist. For example, cached data from /sync/ can change over time if show airing statuses or movie release information are updated.What you can fetch:Ratings and statuses for movies, TV shows, and anime in a user’s watchlist.Filter by list type (all,watching, plantowatch, completed, dropped, hold).Current release status for each item (e.g., ongoing, released, ended).It is highly recommended to cache data for ended TV/anime shows and released movies (or items in the Completed list) for longer periods, as their average ratings and statuses rarely change.possible fields values: simkl,link,ext,rank,release_status,yearrelease_status Response:Below is a table of possible release_status values by media type:
+Type	Release Status	Meaning
+movie	upcoming, rumored, planned, in production, post production,cancelled	Various states indicating the movie is not yet fully released or has been cancelled.
+released	The movie is already out.
+tv	upcoming, planned, in production, cancelled	The series is not yet released.
+returning series	The series is ongoing, with more episodes/seasons planned.
+ended	The series has finished; no new episodes will be released.
+anime	upcoming, rumored planned, in production, post production,cancelled	The anime is not yet released.
+ongoing	The anime is actively airing or has new episodes planned.
+ended	The anime has concluded; no new episodes are planned.
+Redirect
+Redirect to Simkl, trailer or TwitterIn situations when you want to link directly to the Movie or TV show episode on Simkl from your Website or APP but don't know Simkl URL, you can use the Redirect API. Redirect users directly to Simkl page, Trailer or to Twitter (to Share a Simkl link on Twitter with prefilled data).Use CasesHere are some examples of the things you can build with the Redirect API:A browser extension to quickly link to Simkl based on page content.A website page linking directly to Simkl based on IMDB ID or TV Show name.Link to a trailer knowing only Movie name and year.Share an episode on Twitter from your browser extension.Get all Simkl IDs for your own API.
+Redirect
+🔓 Token Required🔒 client_id Not RequiredUse this if you want to make a redirect to Simkl or (fast post) to Twitter using show's title or id. It will return "location" header.The more parameters you'll pass, the more accurate redirect will be. Type show combine tv and anime types.Usage examples:https://api.simkl.com/redirect?to=Simkl&imdb=tt1520211https://api.simkl.com/redirect?to=Simkl&imdb=https://www.imdb.com/title/tt1520211/
+Mark as watched
+🔓 Token Not Required🔒 client_id RequiredYou can use the same parameters as in Redirect with to=watched.On first use, the user will be shown the Allow dialog to allow your app mark as watched in his profile and then redirected to the episode or movie with "Marked as watched notification".Currently supports marking episodes in TV Shows and Anime. If you would like mark movies or add to plan to watch list, please let us know, we'll add the functionality.HTML example of a button: https://codepen.io/masyk/pen/BaGLmNr
+Search
+ID Lookup
+Get items by ID
+🔓 Token Not RequiredYou can lookup items by their ID using this endpoint. Supports IMDB, TVDB, TMDB, AniDB, Hulu, Netflix, MAL, Crunchyroll ID. This method will respond with Standard Media Object.status field values in response are: ended,tba,airing for anime\tv and released,upcoming for movies.Text
+Get items based on text query
+📄 Pagination 🔓 Token Not Required ✨ Full InfoSearch items by title, sorted by relevance (what people search most). This method will respond with Standard Media Object + additional fields if extended parameter passed.For movies or anime with movie type, tmdb id points to the movies section on TMDB site, otherwise to the TV sectionItems with endpoint_type = anime has additional anime type key, see possible values for the anime_type key in Standard Media Object,Page limit is 20, max items per page is 50.File
+Find show, anime or movie by file
+🔓 Token Not RequiredUse it if you have a filename and want to get simkl_id based on it. Right now TV Shows and Anime files can be recognized the best. Movies are harder to recognize without using the hash.You can search by filename or by full folder+filename (see request examples).This method will respond with Standard Media Object + some new fields.multipart = we have 2+ episodes in one filename, use part parameter to get necessary episode.POSSIBLE JSON RESPONSE DATA
+Key	Value	Description
+type	episode	this is an episode of a TV Show or Anime
+type	movie	this is movie
+episode: multipart	false	not multipart
+episode: multipart	0	no more episodes left
+episode: multipart	1	you can get info on one more episode after this one in this filename
+Random
+Find random show, anime or movie
+🔓 Token OptionalUse it if you want to find random item based on your filters. If Token is passed, wacthed items will be excluded.Use CasesHere are some examples of the things you can build with the Random Search API:Find random Netflix TV Show, Anime or Movie to watchFind random TV Show, Anime or Movie in Simkl databaseRequirements"Powered by SIMKL" with a link to https://simkl.com is required on the web page or inside your app where this functionality is used.
+TV
+Summary
+Get detail info about the TV Show
+🔓 Token Not Required ✨ Full InfoReturns a single detail info of the tv show.The status field can have these values ended,tba,airingEpisodes
+Get TV Show episodes
+🔓 Token Not Required ✨ Full InfoReturns an array of all episodes of the TV ShowTrending
+Get trending TV series
+🔓 Token Not Required ✨ Full Info (Discover)You can use any filters from the Best site section.Select any filter\slider and copy it from the URL to this API endpoint.This endpoint's default url filters are ?wltime=today&langs=en&subtype=-t_documentary,-t_youtube,-t_entertainmentGenres
+Get items filtered by genre, years etc...
+📄 Pagination 🔓 Token Not RequiredReturns an array of (Standard Media Object) This endpoint accepts all parameters from the https://simkl.com/tv/all/, select the necessary filters and copy parameters from the url.Genres API duplicates the urls of the Genres on the website so create a filter on the website and add it to genres API.Premieres
+Get latest premieres
+📄 Pagination 🔓 Token Not RequiredReturns an array of (Standard Media Object)Airing
+Get Airing TV Shows
+🔓 Token Not RequiredReturns airing TV Shows (Standard Media Object)Best
+Get best of all TV Shows
+🔓 Token Not RequiredReturns an array of customized (Standard Media Object)
+Anime
+Summary
+Get detail info about the Anime
+🔓 Token Not Required ✨ Full InfoReturns a single detail info of the anime. Same as /tv/summary endpoint + added anime_type,en_title fields, possible values are tv,special,ova, movie,music video,ona.Episodes
+Get Anime episodes
+🔓 Token Not Required ✨ Full InfoReturns an array of all episodes of the AnimeTrending
+Get trending anime series
+🔓 Token Not Required ✨ Full Info (Discover)You can use any filters from the Best site section.Select any filter\slider and copy it from the URL to this API endpoint.This endpoint's default url filters are ?wltime=todayGenres
+Get items filtered by genre, years etc...
+📄 Pagination 🔓 Token Not RequiredReturns an array of (Standard Media Object) This endpoint accepts all parameters from https://simkl.com/anime/all/, select necessary filters and copy parameters from the url.Genres API duplicates the urls of the Genres on the website so create a filter on the website and add it to genres API.Premieres
+Get latest premieres
+📄 Pagination 🔓 Token Not RequiredReturns an array of (Standard Media Object). Added anime_type field, possible values are tv,special,ova,movie,music video,ona.Airing
+Get Airing Anime
+🔓 Token Not RequiredReturns ongoing Anime (Standard Media Object)Best
+Get best of all Anime
+🔓 Token Not RequiredReturns an array of customized (Standard Media Object)
+Movies
+Summary
+Get detail info about the movie
+🔓 Token Not Required ✨ Full InfoReturns a single detail info about the movie.Trending
+Get trending movies
+🔓 Token Not Required ✨ Full Info (Discover)You can use any filters from the Best site section.Select any filter\slider and copy it from the URL to this API endpoint.This endpoint's default url filters are ?budget=1-500&release=1995-2025&langs=en&wltime=todayGenres
+Get items filtered by genre, years, etc...
+📄 Pagination 🔓 Token Not RequiredReturns an array of (Standard Media Object) This endpoint accepts all parameters from the https://simkl.com/movies/all/, select the necessary filters and copy parameters from the URL.Genres API duplicates the URLs of the Genres on the website, so create a filter on the website and add it to the genres API.
+SyncSimkl can be one central place where you store all your watch history. Syncing allows all your devices and apps have your watch history up to date. Use Simkl as your a cloud backup for all your Media history.Get All ItemsThis is a list of all your movies, shows and episodes that you watched or have in your Plan to Watch list.To start a sync first check the last activities of the user and then do an update only if the date in one of them have changed scince your last check.
+How to Use SyncHow to properly use date_from together with the Last Activities and Get All Items endpointsTo efficiently synchronize a user's watch history with your application using the Simkl API, you should leverage the date_from parameter in conjunction with the /sync/activities endpoint. This allows you to fetch only the data that has changed since your last sync, reducing data transfer and processing time. Below is a step-by-step guide on how to implement this:1. Initial Sync (First Request)a. Call the Last Activities EndpointBegin by making a request to the /sync/activities endpoint to retrieve the latest activity timestamps for the user. This endpoint provides timestamps for various categories and media types, indicating the last time each was updated.Request:POST https://api.simkl.com/sync/activities
+Headers:
+    Authorization: Bearer [token]
+    simkl-api-key: [client_id]
+Response Example:{
+    "all": "2023-10-12T09:03:45Z",
+    "settings": {
+        "all": "2023-10-10T09:17:15Z"
+    },
+    "tv_shows": {
+        "all": "2023-10-12T09:03:45Z",
+        "rated_at": "2023-10-11T08:00:00Z",
+        "plantowatch": "2023-10-12T09:03:45Z",
+        "watching": "2023-10-10T07:00:00Z",
+        "completed": "2023-10-09T06:00:00Z",
+        "hold": null,
+        "dropped": "2023-10-08T05:00:00Z",
+        "removed_from_list": "2023-10-07T04:00:00Z"
+    },
+    "anime": {
+        "all": "2023-10-12T09:03:45Z",
+        "rated_at": "2023-10-10T08:00:00Z",
+        "plantowatch": "2023-10-11T09:03:45Z",
+        "watching": "2023-10-09T07:00:00Z",
+        "completed": "2023-10-08T06:00:00Z",
+        "hold": null,
+        "dropped": "2023-10-07T05:00:00Z",
+        "removed_from_list": "2023-10-06T04:00:00Z"
+    },
+    "movies": {
+        "all": "2023-10-12T09:03:45Z",
+        "rated_at": "2023-10-11T08:00:00Z",
+        "plantowatch": "2023-10-10T09:03:45Z",
+        "completed": "2023-10-09T07:00:00Z",
+        "dropped": "2023-10-08T06:00:00Z",
+        "removed_from_list": "2023-10-07T05:00:00Z"
+    }
+}
+b. Save the TimestampsStore all the datetime values from the response in your application's local or cloud storage. These timestamps will be used to determine changes in the user's data during subsequent syncs.c. Fetch All Data Without date_fromSince this is the first sync and you have no prior data, you need to retrieve the entire watchlist.Request:GET https://api.simkl.com/sync/all-items/
+Headers:
+    Authorization: Bearer [token]
+    simkl-api-key: [client_id]
+Response:The API will return all items (movies, shows, anime) that the user has in their watchlist. Process and store this data in your application as the baseline for future syncs.2. Subsequent Syncs (Further Requests)a. Periodically Check for UpdatesAfter some time, check the /sync/activities endpoint for any changes. You can compare the dates from this endpoint with your locally saved copy. You may compare any specific date you need (e.g., movies.completed, tv_shows.watching) or just the main all date ("all": "2023-10-12T09:03:45Z").To keep your app's data current, periodically check the /sync/activities endpoint for changes. Here are optimal times to perform this check:When the User Opens the App: Sync immediately to ensure the latest data is displayed.When the App Becomes Active: If the app was in the background, check for updates when it becomes active again.After User Actions: Sync after the user watches an episode, rates an item, or modifies their watchlist.At Regular Intervals: For apps that stay open, consider syncing every few hours to keep data fresh.By syncing during these key moments, your app stays up-to-date without unnecessary API calls.Request:POST https://api.simkl.com/sync/activities
+Headers:
+    Authorization: Bearer [token]
+    simkl-api-key: [client_id]
+b. Compare TimestampsCompare the new timestamps received with the ones you previously saved.If a Timestamp Has Changed: This indicates that data in that category has been updated since your last sync.If a Timestamp Has Not Changed: No action is needed for that category.Note: Depending on your application's requirements, you can choose to monitor specific timestamps that are relevant to your data synchronization needs, or you can rely on the main "all" timestamp for a broader check.c. Use date_from Parameter for UpdatesFor each category where the timestamp has changed, use the date_from parameter in your requests to fetch only the updated data.Request Example for Updated Shows:GET https://api.simkl.com/sync/all-items/shows/?date_from=2023-10-10T07:00:00Z
+Headers:
+    Authorization: Bearer [token]
+    simkl-api-key: [client_id]
+date_from Value: Use the saved timestamp from your last sync for that specific category.d. Process Updated DataUpdate your local data store with the items received:Add New Items: Include any new shows, movies, or episodes added.Update Existing Items: Reflect changes in status, ratings, or watched episodes.Remove Deleted Items: If the removed_from_list timestamp has changed, identify and remove items that are no longer in the user's watchlist.Handling Removals:If items were removed, you might need to call /sync/all-items/ without date_from only with extended=simkl_ids_only or extended=ids_only to get the full current list (mini watchlist with IDs only) and compare it with your local data to determine which items have been removed.e. Update Saved TimestampsAfter processing the updates, overwrite your saved timestamps with the new ones from the latest /sync/activities response. This ensures your next sync will use the correct date_from values.3. Detailed Steps with ExamplesFirst Sync:Call /sync/activities and Save TimestampsPOST https://api.simkl.com/sync/activities
+Save the entire response.Fetch All Items Without date_fromGET https://api.simkl.com/sync/all-items/
+Process and store the data locally.Subsequent Syncs:1. Call /sync/activities   POST https://api.simkl.com/sync/activities
+2. Compare TimestampsCompare each timestamp with the saved ones.Example: If movies.rated_at has changed from 2023-10-11T08:00:00Z to 2023-10-12T09:00:00Z (compared to your saved copy), you need to fetch updated movie ratings.3. Fetch Updates with date_fromFor updated categories, make requests like:   GET https://api.simkl.com/sync/all-items/movies/?date_from=2023-10-11T08:00:00Z
+4. Process UpdatesAdd or Update Items: Incorporate new data into your local store.Remove Items: If removed_from_list has changed, fetch the full list and remove items not present.5. Update Saved TimestampsReplace old timestamps with the new ones from the latest /sync/activities response.4. Handling Specific ScenariosRatings Updates:If rated_at has changed, use /sync/ratings with date_from to get the latest ratings.Request:GET https://api.simkl.com/sync/ratings/?date_from=2023-10-11T08:00:00Z
+Headers:
+    Authorization: Bearer [token]
+    simkl-api-key: [client_id]
+Note on Automatic Moves:When a user rates an item not in their list, it may automatically move to Completed or Watching. However, the completed_at timestamp may not update. Always check ratings when rated_at changes.Use of Extended Parameters:When needing detailed information (e.g., watched episodes), use extended=full and episode_watched_at=yes:GET https://api.simkl.com/sync/all-items/shows/?extended=full&episode_watched_at=yes&date_from=2023-10-10T07:00:00Z
+Headers:
+    Authorization: Bearer [token]
+    simkl-api-key: [client_id]
+Caution: These parameters increase response size. Always use them with date_from to minimize data transfer.5. Tips and Best PracticesTime Zones: All timestamps are in UTC. Convert them appropriately if your application operates in a different time zone.Error Handling: Implement robust error handling for network issues or unexpected responses.Data Integrity: Ensure that your local data store accurately reflects the user's data on Simkl after each sync.Rate Limiting: Be mindful of API rate limits. Avoid excessive calls by scheduling syncs appropriately.6. SummaryBy following these steps, you ensure that:Your application stays up-to-date with the user's Simkl watch history.Data transfer is minimized by only fetching changes since the last sync.The user experiences seamless synchronization without unnecessary delays or data usage.
+Example Workflow Recap
+First Sync:Save all timestamps from /sync/activities.Fetch all items without date_from.Store data locally.Further Syncs:Call /sync/activities to get new timestamps.Compare with saved timestamps.For each changed category:Use the relevant saved timestamp as date_from in /sync/all-items/ request.Process and update local data.Update saved timestamps for the next sync.By properly using date_from with the activity endpoint and comparing the specific dates you need or just the main "all" date, you optimize your application's performance and provide a better experience for your users.Last Activities
+Get last activity
+🔒 Token RequiredWhen syncing it's best to check user's last activity first. Then you'll be able to sync only the watchlists that have changed since the last sync.This method will decrease sync time or minimize wait time to zero if nothing changed so you do not need to download user's full history every time.NOTE: when user rates the movie, tv show or anime and it is not in his list, it will be automatically moved to Completed, Watching depending on it's type(movie or serie)Fields definition and HOWTO
+Name	Description
+all	latest update time within the category, use it as first check
+settings	any update in https://simkl.com/settings/ will trigger update time. For example when user changes his name or time zone.
+rated_at	if updated check the Get Ratings endpoint with date_from parameter to get latest rating updates/deletes.
+
+CAUTION! When the user rated a movie it will be automoved to "Completed", but completed_at activity field date won't be updated. You should use /sync/ratings endpoint with date_from and get those "Completed" items from there(it has all data).
+Update ratings and statuses(completed,watching) in your app
+plantowatch
+watching
+completed
+hold
+dropped	Items were added to one of the lists(exc. ratings automove function which won't update this fields) or some episodes were marked/unmarked
+
+If updated check the Get All Items endpoint with date_from and extended parameters
+removed_from_list	Check the Get All Items endpoint without date_from and extended parameters to determine which items were removed.
+If removed items from the lists had ratings, they would be removed
+Steps for how to use it with date_from field:Save all datetime values from this endpoint to your local/cloud storage of the APPFetch all data from /sync/get-all-items endpoint without date_from fieldAfter some time, check this endpoint for any changes(compare the dates from this endpoint with you local saved copy, any specific date you need or just the main "all": "2016-10-29T09:03:45Z" date).On dates changeuse the date saved from your 1 step (ex. "all": "2016-10-29T09:03:45Z") as date_from field value in /sync/get-all-items endpointsave the new datetime values from this endpoint to your local/cloud storagego to step 3date_from field shows all items with the date greater(newer) than date_from field.If you have any ideas how to make sync even better for you, please let us know.Get All Items
+Get all items in the user's watchlist
+🔒 Token Required ✨ Full Info optionalReturns all items that user has in his watchlist (watching, plan to watch, dropped, completed), shows, anime, movies.Anime block has anime_type field, possible values are tv,special,ova,movie,music video,ona.Note: If a user doesn't have anything in his watchlists, the response will be nullYou can add to the URL:
+Variable	Description
+extended=full	adds a list of episodes user have watched
+extended=full_anime_seasons	same as full + TVDB season and episode numbers for every Anime episode. All Anime series including Completed watchlist has American style seasons map added mapped_tvdb_seasons: [1,2].
+extended=simkl_ids_only	minified response, returns only simkl IDs and slugs.
+extended=ids_only	minified response, returns only all IDs and slugs without any additionl info.
+episode_watched_at=yes	adds a time when user watched the episode as watched_at time for all episodes
+next_watch_info=yes	adds more info about next to watch episodes
+memos=yes	adds member's memo
+IMPORTANT: Please keep in mind that adding more data to the request (using extended and episode_watched_at) makes the reply exponentially larger, + a few megabytes in most cases, so please use it only when needed and always with the use of date_from so that the server reply was very small and fast.More details on how to use date_from field see hereAdd Items to the history
+Add items to watched/watching history
+🔒 Token RequiredThis endpoint lets you add items to a user's watched history.You can include movies, shows, episodes, or even specific seasons. The more details you provide (like title, year, and IDs), the easier it is for Simkl to match the item correctly.By default, if you don’t specify watchlist status or episodes when adding a show:If the show hasn’t been released yet: It will be added to your Watching list.If the show is still airing: All aired episodes will be marked as watched.If the show has ended: The show will be moved to your Completed list.Using watched_at: If you include a UTC datetime in watched_at, the item is recorded as watched at that time.Marking as completed: You can add status: "completed" to mark a show as completed. However, if the show is still airing, it will be added to your "watching" watchlist instead and all aired episodes will be marked as watched. The updated watchlist status will be returned in the response.Moving to watching: You can add status: "watching" to keep the show in the Watching watchlist without updating any episodes.List of all supported statuses: watching, plantowatch, completed, dropped, hold.Handling Anime Seasons with TVDB/TMDB IDsBy default, anime seasons on Simkl are treated as separate series. To mark all seasons for an anime (when using only TVDB or TMDB IDs) starting from first season, include the flag:"use_tvdb_anime_seasons": true
+in the item object.Each media object should include as much data as possible—especially title, year, and ids—to help Simkl accurately detect the item. You can also include a watched_at field to specify the UTC datetime when the item was watched.if watched_at UTC datetime is passed then all will be marked as watched in the past.Possible values in response for the anime_type key see Standard Media Object and for the simkl_type are movie,tv,animeJSON POST DATA
+Key	Type	Value
+movies	array	Array of movie objects (see examples)
+shows	array	Array of show objects (see examples)
+episodes	array	Array of episode objects (see examples)
+MEDIA OBJECTS POST DATA
+Key	Type	Value
+item*	object	movie, show or episode objects
+watched_at	datetime	UTC datetime when the item was watched
+Moving between WatchlistsUse 'Add Item to the List' if you only need to move items between Watchlists.Remove Items from History and from Lists
+Remove items from watched/watching history
+🔒 Token RequiredRemove the items from the user's watched history. You can pass shows, seasons, episodes and movies. If no episodes are passed and the season is specified then all episodes within this season will be unmarked. If seasons were skipped too then the show will be removed completely.When removing show or movie, ratings are removed automatically as well for that item.JSON POST DATA
+Key	Type	Value
+movies	array	Array of movie objects (see examples)
+shows	array	Array of show objects (see examples)
+MEDIA OBJECTS POST DATA
+Key	Type	Value
+item*	object	movie, show objects
+Get Ratings
+Get all user's ratings
+🔒 Token Required ✨ Full InfoReturns all rated items in user's lists filtered by type. You can also filter items by rating score. Send a comma separated string if you need a multiple rating items or want to skip items with deleted ratings.Add Ratings
+Add new ratings
+🔒 Token RequiredRate the movies or tv shows/anime. You cannot rate the seasons or episodes right now.If the show/anime or movie is rated before it was in user's list, show will be automatically added to "Watching" list and the movie will be added to "I've seen this" list.Keep in mind, when removing the show/anime or movie user's ratings will be removed as well for that item.JSON POST DATA
+Key	Type	Value
+movies	array	Array of movie objects (see examples)
+shows	array	Array of show objects (see examples). Anime are shows too
+Remove Ratings
+Remove ratings
+🔒 Token RequiredAny movies or tv shows passed here will be unratedJSON POST DATA
+Key	Type	Value
+movies	array	Array of movie objects (see examples)
+shows	array	Array of show objects (see examples)
+MEDIA OBJECTS POST DATA
+Key	Type	Value
+item*	object	movie, show objects
+Add Item to the List
+Add items to specific list
+🔒 Token RequiredAdd items to a user's Simkl lists. For example you can add a Show directly to Plan to Watch or move existing show from Watching to Not Interesting. You can pass shows and movies.Pass as much data as possible into the item including title, year and ids fields so Simkl could detect the item better.JSON POST DATA
+Key	Type	Value
+movies	array	Array of movie objects (see examples)
+shows	array	Array of show objects (see examples)
+MEDIA OBJECTS POST DATA
+Key	Type	Value
+item*	object	tv show or movie object.
+to	string	possible values "plantowatch","completed","watching","hold","dropped"
+to	array	custom lists IN DEV
+watched_at	datetime	UTC datetime when the item was watched, available only for "completed" status
+Check if watchedThis endpoint retrieves one or a list of shows, seasons or episodes in a show a user has watched.
+Get specific user's watched items
+🔒 Token RequiredThis endpoint retrieves the list of shows or episodes a user has watched. You can pass different IDs to get their corresponding statuses in the user's watchlist.The JSON body may contain various IDs (e.g., Simkl, TMDB, IMDB, Netflix, etc.) to check watch status.Query Parameters:extended (optional) – Controls the level of detail in the response. Possible values:counters – Includes watched counts only.episodes – Retrieves all episodes with counters.specials – Includes special episodes as season 0, and adjusts counters accordingly.These values can be combined using a comma (,) separator.
+Example: ?extended=counters,specialsLimitationsWhen using the extended parameter, the request can include a maximum of 100 items.Exceeding this limit will result in an error.📌 JSON Response Data
+Key	Value	Description
+result	true	The item was found in the user's watchlist.
+result	false	The item was found but is not in the user's watchlist.
+result	not_found	No match found in the Simkl database using the provided Title, Year, or ID.
+list	completed, watching, dropped, hold, plantowatch	The user's watchlist category for the item.
+last_watched_at	YYYY-MM-DDTHH:MM:SSZ	Last watched date and time of the episode or movie. (UTC format)
+episodes_total	8	The total number of episodes in the show or season.
+episodes_aired	7	The number of episodes that have aired so far.
+episodes_to_be_aired	1	The number of episodes yet to be aired.
+episodes_watched	6	The number of episodes the user has watched.
+seasons	[...] (array)	A list of seasons for the show.
+seasons[].episodes	[...] (array)	A list of episodes in the season.
+UsersUser's public data will return all info with GET methods without OAuth\PIN authorization.
+Last Watched ArtsGet images for user's last watched TV Show or Movie. Useful for example to create an app that will update user's wallpaper on computer or phone
+Get last watched images and data
+Will reply with user's id, Show\Movie URL, Show\Movie title, large poster, and large fanart image.Please cache the image on the device, do not redownload if the same image url.
+Redirect to last watched image
+Will simply redirect to the image for your app to download or display.Please cache the image on the device, do not redownload if the same image url.Settings
+Receive settings
+🔒 Token RequiredYou can sync user's settings with your apps/site settingsStats
+Get watched statistics
+🔒 Token OptionalGet all info about user's watched movies, tv shows, anime and episodes. Some users profiles are private so you need to pass token to see their stats
+Need some help?CORSCurrently API supports Cross Origin Resource Sharing (CORS) for AJAX requests on the api.simkl.com domain. You can read the CORS W3C working draft, or this intro from the HTML 5 Security Guide.Get in touchWe’re always happy to help you get set up with Simkl. If you're stuck, want to find out more or need to speak to us, visit our API developer Discord server or see the support center.

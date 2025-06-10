@@ -14,6 +14,6 @@ services:
       - TRAKT_CLIENT_SECRET=${TRAKT_CLIENT_SECRET}
       - SIMKL_CLIENT_ID=${SIMKL_CLIENT_ID}
       - SIMKL_CLIENT_SECRET=${SIMKL_CLIENT_SECRET}
-      - TRAKT_REDIRECT_URI=${TRAKT_REDIRECT_URI:-urn:ietf:wg:oauth:2.0:oob}
-      - SIMKL_REDIRECT_URI=${SIMKL_REDIRECT_URI:-urn:ietf:wg:oauth:2.0:oob}
+      - TRAKT_REDIRECT_URI=${TRAKT_REDIRECT_URI:-http://localhost:5000/oauth/trakt}
+      - SIMKL_REDIRECT_URI=${SIMKL_REDIRECT_URI:-http://localhost:5000/oauth/simkl}
 

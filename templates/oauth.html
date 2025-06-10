@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PlexyTrack - OAuth</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+</head>
+<body>
+    <div class="app-container">
+        <header class="app-header">
+            <img src="{{ url_for('static', filename='logo.png') }}" alt="PlexyTrack Logo" class="logo">
+            <h1>PlexyTrack</h1>
+            <nav class="app-nav">
+                <a href="{{ url_for('index') }}" class="nav-link">Sync</a>
+                <a href="{{ url_for('backup_page') }}" class="nav-link">Backup</a>
+                <a href="{{ url_for('config_page') }}" class="nav-link">Config.</a>
+                <a href="{{ url_for('oauth_index') }}" class="nav-link active">OAuth</a>
+            </nav>
+        </header>
+
+        <main class="content-area">
+            {% if code %}
+            <section class="card">
+                <h2>{{ service }} Authorization Code</h2>
+                <p class="description">Copy the code below and paste it into the Config. tab to finish authentication.</p>
+                <div class="oauth-code">{{ code }}</div>
+                <a href="{{ url_for('authorize_service', service=service.lower(), code=code) }}" class="button primary" style="margin-top:10px;">Continue</a>
+            </section>
+            {% else %}
+            <section class="card">
+                <h2>OAuth Codes</h2>
+                <p class="description">After authorizing on Trakt or Simkl you will be redirected here and the code will be displayed.</p>
+            </section>
+            {% endif %}
+        </main>
+
+        <footer class="app-footer">
+            <p>MIT License. by Drakonis96</p>
+        </footer>
+    </div>
+</body>
+</html>

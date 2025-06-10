@@ -1563,16 +1563,36 @@ def index():
     )
 
 
+@app.route("/oauth")
+def oauth_index():
+    """Landing page for OAuth callbacks."""
+    return render_template("oauth.html", service=None, code=None)
+
+
+@app.route("/oauth/<service>")
+def oauth_callback(service: str):
+    """Display OAuth code for the given service."""
+    service = service.lower()
+    if service not in {"trakt", "simkl"}:
+        return redirect(url_for("oauth_index"))
+    code = request.args.get("code", "")
+    return render_template(
+        "oauth.html",
+        service=service.capitalize(),
+        code=code,
+    )
+
+
 @app.route("/trakt")
 def trakt_callback():
     code = request.args.get("code", "")
-    return redirect(url_for("authorize_service", service="trakt", code=code))
+    return redirect(url_for("oauth_callback", service="trakt", code=code))
 
 
 @app.route("/simkl")
 def simkl_callback():
     code = request.args.get("code", "")
-    return redirect(url_for("authorize_service", service="simkl", code=code))
+    return redirect(url_for("oauth_callback", service="simkl", code=code))
 
 
 @app.route("/config")

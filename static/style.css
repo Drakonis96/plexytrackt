@@ -329,6 +329,18 @@ form button[type="submit"],
     margin: 10px 0 20px; /* Add more margin around the auth link button */
 }
 
+/* OAuth callback code box */
+.oauth-code {
+    font-family: monospace;
+    background-color: #f9f9f9;
+    border: 1px solid #eee;
+    padding: 10px;
+    border-radius: 6px;
+    word-break: break-all;
+    text-align: center;
+    margin-bottom: 15px;
+}
+
 /* Responsive Adjustments */
 @media (max-width: 768px) {
     .app-header {

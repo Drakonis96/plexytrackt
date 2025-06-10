@@ -36,7 +36,7 @@ If you mark a list as liked on Trakt, PlexyTrack will create a Plex collection w
 
 ### Backup and restore
 
-From the web interface you can download a backup file containing your Trakt history, watchlist and ratings. This JSON file can be uploaded again to restore your data at any time. Creating a backup is recommended before starting synchronization for the first time.
+From the web interface you can download a backup file containing your Trakt or Simkl history, watchlist and ratings. This JSON file can be uploaded again to restore your data at any time. Creating a backup is recommended before starting synchronization for the first time.
 
 ### Live sync
 

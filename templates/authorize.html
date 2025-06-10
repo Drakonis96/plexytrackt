@@ -13,7 +13,12 @@
         <header class="app-header">
             <img src="{{ url_for('static', filename='logo.png') }}" alt="PlexyTrack Logo" class="logo">
             <h1>PlexyTrack</h1>
-            <!-- No navigation links needed on the authorization page -->
+            <nav class="app-nav">
+                <a href="{{ url_for('index') }}" class="nav-link">Sync</a>
+                <a href="{{ url_for('backup_page') }}" class="nav-link">Backup</a>
+                <a href="{{ url_for('config_page') }}" class="nav-link active">Config.</a>
+                <a href="{{ url_for('oauth_index') }}" class="nav-link">OAuth</a>
+            </nav>
         </header>
 
         <main class="content-area">

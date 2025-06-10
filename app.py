@@ -569,12 +569,16 @@ def get_plex_history(plex) -> Tuple[
 def get_trakt_history(
     headers: dict,
 ) -> Tuple[
-    Dict[str, Tuple[str, Optional[int]]],
-    Dict[str, Tuple[str, str]],
+    Dict[str, Tuple[str, Optional[int], Optional[str]]],
+    Dict[str, Tuple[str, str, Optional[str]]],
 ]:
-    """Return Trakt history keyed by IMDb or TMDb GUID for movies and episodes."""
-    movies: Dict[str, Tuple[str, Optional[int]]] = {}
-    episodes: Dict[str, Tuple[str, str]] = {}
+    """Return Trakt history keyed by IMDb or TMDb GUID for movies and episodes.
+
+    ``watched_at`` is included so items can be synced with the original
+    timestamp when possible.
+    """
+    movies: Dict[str, Tuple[str, Optional[int], Optional[str]]] = {}
+    episodes: Dict[str, Tuple[str, str, Optional[str]]] = {}
 
     page = 1
     logger.info("Fetching Trakt history…")
@@ -592,6 +596,7 @@ def get_trakt_history(
         if not data:
             break
         for item in data:
+            watched_at = item.get("watched_at")
             if item["type"] == "movie":
                 m = item["movie"]
                 ids = m.get("ids", {})
@@ -604,7 +609,11 @@ def get_trakt_history(
                 if not guid:
                     continue
                 if guid not in movies:
-                    movies[guid] = (m["title"], normalize_year(m.get("year")))
+                    movies[guid] = (
+                        m["title"],
+                        normalize_year(m.get("year")),
+                        watched_at,
+                    )
             elif item["type"] == "episode":
                 e = item["episode"]
                 show = item["show"]
@@ -621,6 +630,7 @@ def get_trakt_history(
                     episodes[guid] = (
                         show["title"],
                         f"S{e['season']:02d}E{e['number']:02d}",
+                        watched_at,
                     )
         page += 1
 
@@ -677,12 +687,16 @@ def update_trakt(
 def get_simkl_history(
     headers: dict,
 ) -> Tuple[
-    Dict[str, Tuple[str, Optional[int]]],
-    Dict[str, Tuple[str, str]],
+    Dict[str, Tuple[str, Optional[int], Optional[str]]],
+    Dict[str, Tuple[str, str, Optional[str]]],
 ]:
-    """Return Simkl history keyed by IMDb or TMDb GUID."""
-    movies: Dict[str, Tuple[str, Optional[int]]] = {}
-    episodes: Dict[str, Tuple[str, str]] = {}
+    """Return Simkl history keyed by IMDb or TMDb GUID.
+
+    ``watched_at`` is included so items can be synced with the original
+    timestamp when possible.
+    """
+    movies: Dict[str, Tuple[str, Optional[int], Optional[str]]] = {}
+    episodes: Dict[str, Tuple[str, str, Optional[str]]] = {}
 
     logger.info("Fetching Simkl history…")
     resp = simkl_request(
@@ -700,6 +714,7 @@ def get_simkl_history(
 
     for m in data.get("movies", []):
         ids = m.get("ids", {})
+        watched_at = m.get("watched_at")
         guid = None
         if ids.get("imdb"):
             guid = f"imdb://{ids['imdb']}"
@@ -708,7 +723,11 @@ def get_simkl_history(
         elif ids.get("tvdb"):
             guid = f"tvdb://{ids['tvdb']}"
         if guid and guid not in movies:
-            movies[guid] = (m.get("title", ""), normalize_year(m.get("year")))
+            movies[guid] = (
+                m.get("title", ""),
+                normalize_year(m.get("year")),
+                watched_at,
+            )
 
     for show in data.get("shows", []):
         title = show.get("title", "")
@@ -716,6 +735,7 @@ def get_simkl_history(
             s_num = season.get("number")
             for ep in season.get("episodes", []):
                 ids = ep.get("ids", {})
+                watched_at = ep.get("watched_at")
                 guid = None
                 if ids.get("imdb"):
                     guid = f"imdb://{ids['imdb']}"
@@ -727,6 +747,7 @@ def get_simkl_history(
                     episodes[guid] = (
                         title,
                         f"S{s_num:02d}E{ep.get('number'):02d}",
+                        watched_at,
                     )
 
     return movies, episodes
@@ -1358,26 +1379,26 @@ def sync():
             logger.error("Failed updating Trakt/Simkl history: %s", exc)
     missing_movies = {
         (title, year, guid)
-        for guid, (title, year) in trakt_movies.items()
+        for guid, (title, year, _watched) in trakt_movies.items()
         if guid not in plex_movie_guids
     }
     missing_episodes = {
         (show, code, guid)
-        for guid, (show, code) in trakt_episodes.items()
+        for guid, (show, code, _watched) in trakt_episodes.items()
         if guid not in plex_episode_guids
     }
     if simkl_enabled:
         missing_movies.update(
             {
                 (title, year, guid)
-                for guid, (title, year) in simkl_movies.items()
+                for guid, (title, year, _watched) in simkl_movies.items()
                 if guid not in plex_movie_guids
             }
         )
         missing_episodes.update(
             {
                 (show, code, guid)
-                for guid, (show, code) in simkl_episodes.items()
+                for guid, (show, code, _watched) in simkl_episodes.items()
                 if guid not in plex_episode_guids
             }
         )

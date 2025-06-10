@@ -1915,6 +1915,34 @@ def authorize_service(service: str):
     )
 
 
+@app.route("/clear/<service>", methods=["POST"])
+def clear_service(service: str):
+    """Remove stored tokens for the given service."""
+    service = service.lower()
+    if service == "trakt":
+        os.environ.pop("TRAKT_ACCESS_TOKEN", None)
+        os.environ.pop("TRAKT_REFRESH_TOKEN", None)
+        if os.path.exists(TOKEN_FILE):
+            try:
+                os.remove(TOKEN_FILE)
+                logger.info("Removed Trakt token file")
+            except Exception as exc:  # noqa: BLE001
+                logger.error("Failed to remove Trakt token file: %s", exc)
+        if SYNC_PROVIDER == "trakt":
+            save_provider("none")
+    elif service == "simkl":
+        os.environ.pop("SIMKL_ACCESS_TOKEN", None)
+        if os.path.exists(SIMKL_TOKEN_FILE):
+            try:
+                os.remove(SIMKL_TOKEN_FILE)
+                logger.info("Removed Simkl token file")
+            except Exception as exc:  # noqa: BLE001
+                logger.error("Failed to remove Simkl token file: %s", exc)
+        if SYNC_PROVIDER == "simkl":
+            save_provider("none")
+    return redirect(url_for("config_page"))
+
+
 @app.route("/stop", methods=["POST"])
 def stop():
     stop_scheduler()

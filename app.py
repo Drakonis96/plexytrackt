@@ -492,10 +492,9 @@ def get_plex_history(plex) -> Tuple[
             title = item.title
             year = normalize_year(getattr(item, "year", None))
             guid = imdb_guid(item)
-            if not guid:
-                continue
-            if guid not in movies:
-                movies[guid] = {
+            key = movie_key(title.lower(), year, guid)
+            if key not in movies:
+                movies[key] = {
                     "title": title,
                     "year": year,
                     "watched_at": watched_at,
@@ -524,8 +523,9 @@ def get_plex_history(plex) -> Tuple[
             if None in (season, number, show):
                 continue
             code = f"S{int(season):02d}E{int(number):02d}"
-            if guid and guid not in episodes:
-                episodes[guid] = {
+            key = episode_key(show, code, guid)
+            if key not in episodes:
+                episodes[key] = {
                     "show": show,
                     "code": code,
                     "watched_at": watched_at,
@@ -540,8 +540,9 @@ def get_plex_history(plex) -> Tuple[
                     title = item.title
                     year = normalize_year(getattr(item, "year", None))
                     guid = imdb_guid(item)
-                    if guid and guid not in movies:
-                        movies[guid] = {
+                    key = movie_key(title.lower(), year, guid)
+                    if key not in movies:
+                        movies[key] = {
                             "title": title,
                             "year": year,
                             "watched_at": to_iso_z(getattr(item, "lastViewedAt", None)),
@@ -551,8 +552,9 @@ def get_plex_history(plex) -> Tuple[
                 for ep in section.searchEpisodes(viewCount__gt=0):
                     code = f"S{int(ep.seasonNumber):02d}E{int(ep.episodeNumber):02d}"
                     guid = imdb_guid(ep)
-                    if guid and guid not in episodes:
-                        episodes[guid] = {
+                    key = episode_key(ep.grandparentTitle, code, guid)
+                    if key not in episodes:
+                        episodes[key] = {
                             "show": ep.grandparentTitle,
                             "code": code,
                             "watched_at": to_iso_z(getattr(ep, "lastViewedAt", None)),
@@ -595,30 +597,15 @@ def get_trakt_history(
             if item["type"] == "movie":
                 m = item["movie"]
                 ids = m.get("ids", {})
-                if ids.get("imdb"):
-                    guid = f"imdb://{ids['imdb']}"
-                elif ids.get("tmdb"):
-                    guid = f"tmdb://{ids['tmdb']}"
-                else:
-                    guid = None
-                if not guid:
-                    continue
-                if guid not in movies:
-                    movies[guid] = (m["title"], normalize_year(m.get("year")))
+                key = trakt_movie_key(m)
+                if key not in movies:
+                    movies[key] = (m["title"], normalize_year(m.get("year")))
             elif item["type"] == "episode":
                 e = item["episode"]
                 show = item["show"]
-                ids = e.get("ids", {})
-                if ids.get("imdb"):
-                    guid = f"imdb://{ids['imdb']}"
-                elif ids.get("tmdb"):
-                    guid = f"tmdb://{ids['tmdb']}"
-                else:
-                    guid = None
-                if not guid:
-                    continue
-                if guid not in episodes:
-                    episodes[guid] = (
+                key = trakt_episode_key(show, e)
+                if key not in episodes:
+                    episodes[key] = (
                         show["title"],
                         f"S{e['season']:02d}E{e['number']:02d}",
                     )
@@ -699,14 +686,9 @@ def get_simkl_history(
         return movies, episodes
 
     for m in data.get("movies", []):
-        ids = m.get("ids", {})
-        guid = None
-        if ids.get("imdb"):
-            guid = f"imdb://{ids['imdb']}"
-        elif ids.get("tmdb"):
-            guid = f"tmdb://{ids['tmdb']}"
-        if guid and guid not in movies:
-            movies[guid] = (m.get("title", ""), normalize_year(m.get("year")))
+        key = trakt_movie_key(m)
+        if key not in movies:
+            movies[key] = (m.get("title", ""), normalize_year(m.get("year")))
 
     for show in data.get("shows", []):
         title = show.get("title", "")
@@ -719,10 +701,12 @@ def get_simkl_history(
                     guid = f"imdb://{ids['imdb']}"
                 elif ids.get("tmdb"):
                     guid = f"tmdb://{ids['tmdb']}"
-                if guid and guid not in episodes:
-                    episodes[guid] = (
+                code = f"S{s_num:02d}E{ep.get('number'):02d}"
+                key = episode_key(title, code, guid)
+                if key not in episodes:
+                    episodes[key] = (
                         title,
-                        f"S{s_num:02d}E{ep.get('number'):02d}",
+                        code,
                     )
 
     return movies, episodes
@@ -786,7 +770,7 @@ def update_plex(
     # Movies
     for title, year, guid in movies:
         item = None
-        if guid:
+        if isinstance(guid, str):
             try:
                 item = plex.fetchItem(guid)
             except Exception as exc:
@@ -811,7 +795,7 @@ def update_plex(
     # Episodes
     for show, code, guid in episodes:
         item = None
-        if guid:
+        if isinstance(guid, str):
             try:
                 item = plex.fetchItem(guid)
             except Exception as exc:
@@ -1333,12 +1317,12 @@ def sync():
         )
 
     new_movies = [
-        (data["title"], data["year"], data["watched_at"], guid)
+        (data["title"], data["year"], data["watched_at"], data.get("guid"))
         for guid, data in plex_movies.items()
         if guid not in trakt_movie_guids and guid not in simkl_movie_guids
     ]
     new_episodes = [
-        (data["show"], data["code"], data["watched_at"], guid)
+        (data["show"], data["code"], data["watched_at"], data.get("guid"))
         for guid, data in plex_episodes.items()
         if guid not in trakt_episode_guids and guid not in simkl_episode_guids
     ]

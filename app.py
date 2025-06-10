@@ -587,7 +587,7 @@ def get_trakt_history(
         )
         data = resp.json()
         if not isinstance(data, list):
-            logger.error("Unexpected Simkl history format: %r", data)
+            logger.error("Unexpected Trakt history format: %r", data)
             break
         if not data:
             break
@@ -692,7 +692,8 @@ def get_simkl_history(
         params={"extended": "full", "episode_watched_at": "yes"},
     )
     data = resp.json()
-
+    if data is None:
+        data = {}
     if not isinstance(data, dict):
         logger.error("Unexpected Simkl history format: %r", data)
         return movies, episodes

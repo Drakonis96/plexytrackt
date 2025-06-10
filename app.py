@@ -43,6 +43,7 @@ SYNC_RATINGS = True
 SYNC_WATCHED = True  # ahora sí se respeta este flag
 SYNC_LIKED_LISTS = False
 SYNC_WATCHLISTS = False
+LIVE_SYNC = False
 scheduler = BackgroundScheduler()
 plex = None  # will hold PlexServer instance
 
@@ -1242,7 +1243,7 @@ def restore_backup(headers, data: dict) -> None:
 # --------------------------------------------------------------------------- #
 @app.route("/", methods=["GET", "POST"])
 def index():
-    global SYNC_INTERVAL_MINUTES, SYNC_COLLECTION, SYNC_RATINGS, SYNC_WATCHED, SYNC_LIKED_LISTS, SYNC_WATCHLISTS
+    global SYNC_INTERVAL_MINUTES, SYNC_COLLECTION, SYNC_RATINGS, SYNC_WATCHED, SYNC_LIKED_LISTS, SYNC_WATCHLISTS, LIVE_SYNC
 
     load_trakt_tokens()
 
@@ -1269,6 +1270,7 @@ def index():
         SYNC_WATCHED = request.form.get("watched") is not None
         SYNC_LIKED_LISTS = request.form.get("liked_lists") is not None
         SYNC_WATCHLISTS = request.form.get("watchlists") is not None
+        LIVE_SYNC = request.form.get("live_sync") is not None
         # Schedule an immediate sync without blocking the request
         scheduler.add_job(
             sync,
@@ -1294,6 +1296,7 @@ def index():
         watched=SYNC_WATCHED,
         liked_lists=SYNC_LIKED_LISTS,
         watchlists=SYNC_WATCHLISTS,
+        live_sync=LIVE_SYNC,
         message=message,
         mtype=mtype,
         next_run=next_run,
@@ -1365,6 +1368,15 @@ def restore_backup_route():
         logger.error("Failed to restore backup: %s", exc)
         return redirect(url_for("backup_page", message="Restore failed", mtype="error"))
     return redirect(url_for("backup_page", message="Backup restored", mtype="success"))
+
+
+@app.route("/webhook", methods=["POST"])
+def plex_webhook():
+    """Handle Plex webhook events for live synchronization."""
+    if LIVE_SYNC:
+        # Trigger a one-off sync immediately
+        scheduler.add_job(sync, "date", run_date=datetime.now())
+    return "", 204
 
 
 # --------------------------------------------------------------------------- #

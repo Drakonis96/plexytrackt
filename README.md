@@ -32,6 +32,12 @@ If you mark a list as liked on Trakt, PlexyTrack will create a Plex collection w
 
 From the web interface you can download a backup file containing your Trakt history, watchlist and ratings. This JSON file can be uploaded again to restore your data at any time. Creating a backup is recommended before starting synchronization for the first time.
 
+### Live sync
+
+When **Live Sync** is enabled on the main page, PlexyTrack will start a
+webhook endpoint at `/webhook`. Configure a Plex Webhook to call this URL and
+the application will trigger an immediate sync whenever an event is received.
+
 ## Getting a Plex token
 
 1. Open the Plex Web application and sign in.

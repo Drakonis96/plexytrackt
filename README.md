@@ -18,11 +18,17 @@ The application expects the following API credentials:
 - `PLEX_TOKEN` – your Plex authentication token.
 - `TRAKT_CLIENT_ID` – client ID for your Trakt application.
 - `TRAKT_CLIENT_SECRET` – client secret from your Trakt application.
+- `SIMKL_CLIENT_ID` – client ID for your Simkl application (optional).
+- `SIMKL_CLIENT_SECRET` – client secret for your Simkl application (optional).
+- `SIMKL_SYNC_ACTIVATED` – set to `true` to enable Simkl synchronization.
 - `TZ` – timezone for log timestamps, defaults to `Europe/Madrid`.
 
 You do **not** need to provide a Trakt access token or refresh token. The web
 interface will guide you through authorizing the app and will store the tokens
 for you.
+
+If `SIMKL_SYNC_ACTIVATED` is set to `true`, the application will prompt for
+authorization with Simkl right after authorizing Trakt.
 
 The application uses `plexapi` version 4.15 or newer (but below 5).
 
@@ -70,6 +76,9 @@ PLEX_BASEURL=http://localhost:32400
 PLEX_TOKEN=YOUR_PLEX_TOKEN
 TRAKT_CLIENT_ID=YOUR_TRAKT_CLIENT_ID
 TRAKT_CLIENT_SECRET=YOUR_TRAKT_CLIENT_SECRET
+SIMKL_CLIENT_ID=YOUR_SIMKL_CLIENT_ID
+SIMKL_CLIENT_SECRET=YOUR_SIMKL_CLIENT_SECRET
+SIMKL_SYNC_ACTIVATED=false
 TZ=Europe/Madrid
 ```
 

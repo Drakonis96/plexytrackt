@@ -48,10 +48,13 @@ scheduler = BackgroundScheduler()
 plex = None  # will hold PlexServer instance
 
 # --------------------------------------------------------------------------- #
-# TRAKT OAUTH CONSTANTS
+# TRAKT / SIMKL OAUTH CONSTANTS
 # --------------------------------------------------------------------------- #
 TRAKT_REDIRECT_URI = "urn:ietf:wg:oauth:2.0:oob"
 TOKEN_FILE = "trakt_tokens.json"
+
+SIMKL_REDIRECT_URI = "urn:ietf:wg:oauth:2.0:oob"
+SIMKL_TOKEN_FILE = "simkl_tokens.json"
 
 
 # --------------------------------------------------------------------------- #
@@ -197,7 +200,9 @@ def ensure_collection(plex, section, name, first_item=None):
         return plex.createCollection(name, section, items=[first_item])
 
 
-def movie_key(title: str, year: Optional[int], guid: Optional[str]) -> Union[str, Tuple[str, Optional[int]]]:
+def movie_key(
+    title: str, year: Optional[int], guid: Optional[str]
+) -> Union[str, Tuple[str, Optional[int]]]:
     """Return a unique key for comparing movies."""
     if guid:
         return guid
@@ -225,7 +230,9 @@ def trakt_movie_key(m: dict) -> Union[str, Tuple[str, Optional[int]]]:
     return m["title"].lower()
 
 
-def episode_key(show: str, code: str, guid: Optional[str]) -> Union[str, Tuple[str, str]]:
+def episode_key(
+    show: str, code: str, guid: Optional[str]
+) -> Union[str, Tuple[str, str]]:
     if guid and (guid.startswith("imdb://") or guid.startswith("tmdb://")):
         return guid
     return (show.lower(), code)
@@ -263,7 +270,11 @@ def load_trakt_tokens() -> None:
 def save_trakt_tokens(access_token: str, refresh_token: Optional[str]) -> None:
     try:
         with open(TOKEN_FILE, "w", encoding="utf-8") as f:
-            json.dump({"access_token": access_token, "refresh_token": refresh_token}, f, indent=2)
+            json.dump(
+                {"access_token": access_token, "refresh_token": refresh_token},
+                f,
+                indent=2,
+            )
         logger.info("Saved Trakt tokens to %s", TOKEN_FILE)
     except Exception as exc:
         logger.error("Failed to save Trakt tokens: %s", exc)
@@ -284,7 +295,9 @@ def exchange_code_for_tokens(code: str) -> Optional[dict]:
         "grant_type": "authorization_code",
     }
     try:
-        resp = requests.post("https://api.trakt.tv/oauth/token", json=payload, timeout=30)
+        resp = requests.post(
+            "https://api.trakt.tv/oauth/token", json=payload, timeout=30
+        )
         resp.raise_for_status()
     except Exception as exc:
         logger.error("Failed to obtain Trakt tokens: %s", exc)
@@ -314,7 +327,9 @@ def refresh_trakt_token() -> Optional[str]:
         "grant_type": "refresh_token",
     }
     try:
-        resp = requests.post("https://api.trakt.tv/oauth/token", json=payload, timeout=30)
+        resp = requests.post(
+            "https://api.trakt.tv/oauth/token", json=payload, timeout=30
+        )
         resp.raise_for_status()
     except Exception as exc:
         logger.error("Failed to refresh Trakt token: %s", exc)
@@ -328,7 +343,70 @@ def refresh_trakt_token() -> Optional[str]:
     return data["access_token"]
 
 
-def trakt_request(method: str, endpoint: str, headers: dict, **kwargs) -> requests.Response:
+def load_simkl_tokens() -> None:
+    if os.environ.get("SIMKL_ACCESS_TOKEN"):
+        return
+    if os.path.exists(SIMKL_TOKEN_FILE):
+        try:
+            with open(SIMKL_TOKEN_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            os.environ["SIMKL_ACCESS_TOKEN"] = data.get("access_token", "")
+            logger.info("Loaded Simkl token from %s", SIMKL_TOKEN_FILE)
+        except Exception as exc:
+            logger.error("Failed to load Simkl token: %s", exc)
+
+
+def save_simkl_token(access_token: str) -> None:
+    try:
+        with open(SIMKL_TOKEN_FILE, "w", encoding="utf-8") as f:
+            json.dump({"access_token": access_token}, f, indent=2)
+        logger.info("Saved Simkl token to %s", SIMKL_TOKEN_FILE)
+    except Exception as exc:
+        logger.error("Failed to save Simkl token: %s", exc)
+
+
+def exchange_code_for_simkl_tokens(code: str) -> Optional[dict]:
+    client_id = os.environ.get("SIMKL_CLIENT_ID")
+    client_secret = os.environ.get("SIMKL_CLIENT_SECRET")
+    if not all([code, client_id, client_secret]):
+        logger.error("Missing code or Simkl client credentials.")
+        return None
+
+    payload = {
+        "code": code,
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "redirect_uri": SIMKL_REDIRECT_URI,
+        "grant_type": "authorization_code",
+    }
+    try:
+        resp = requests.post(
+            "https://api.simkl.com/oauth/token", json=payload, timeout=30
+        )
+        resp.raise_for_status()
+    except Exception as exc:
+        logger.error("Failed to obtain Simkl token: %s", exc)
+        return None
+
+    data = resp.json()
+    os.environ["SIMKL_ACCESS_TOKEN"] = data["access_token"]
+    save_simkl_token(data["access_token"])
+    logger.info("Simkl token obtained via authorization code")
+    return data
+
+
+def simkl_request(
+    method: str, endpoint: str, headers: dict, **kwargs
+) -> requests.Response:
+    url = f"https://api.simkl.com{endpoint}"
+    resp = requests.request(method, url, headers=headers, timeout=30, **kwargs)
+    resp.raise_for_status()
+    return resp
+
+
+def trakt_request(
+    method: str, endpoint: str, headers: dict, **kwargs
+) -> requests.Response:
     url = f"https://api.trakt.tv{endpoint}"
     resp = requests.request(method, url, headers=headers, timeout=30, **kwargs)
     if resp.status_code == 401:  # token expired
@@ -377,7 +455,9 @@ def get_plex_history(plex) -> Tuple[
             try:
                 item = entry.source() or plex.fetchItem(entry.ratingKey)
             except Exception as exc:
-                logger.debug("Failed to fetch movie %s from Plex: %s", entry.ratingKey, exc)
+                logger.debug(
+                    "Failed to fetch movie %s from Plex: %s", entry.ratingKey, exc
+                )
                 continue
 
             title = item.title
@@ -386,7 +466,12 @@ def get_plex_history(plex) -> Tuple[
             if not guid:
                 continue
             if guid not in movies:
-                movies[guid] = {"title": title, "year": year, "watched_at": watched_at, "guid": guid}
+                movies[guid] = {
+                    "title": title,
+                    "year": year,
+                    "watched_at": watched_at,
+                    "guid": guid,
+                }
 
         # Episodes
         elif entry.type == "episode":
@@ -396,7 +481,9 @@ def get_plex_history(plex) -> Tuple[
             try:
                 item = entry.source() or plex.fetchItem(entry.ratingKey)
             except Exception as exc:
-                logger.debug("Failed to fetch episode %s from Plex: %s", entry.ratingKey, exc)
+                logger.debug(
+                    "Failed to fetch episode %s from Plex: %s", entry.ratingKey, exc
+                )
                 item = None
             if item:
                 season = season or item.seasonNumber
@@ -409,7 +496,12 @@ def get_plex_history(plex) -> Tuple[
                 continue
             code = f"S{int(season):02d}E{int(number):02d}"
             if guid and guid not in episodes:
-                episodes[guid] = {"show": show, "code": code, "watched_at": watched_at, "guid": guid}
+                episodes[guid] = {
+                    "show": show,
+                    "code": code,
+                    "watched_at": watched_at,
+                    "guid": guid,
+                }
 
     logger.info("Fetching watched flags from Plex library…")
     for section in plex.library.sections():
@@ -438,7 +530,9 @@ def get_plex_history(plex) -> Tuple[
                             "guid": guid,
                         }
         except Exception as exc:
-            logger.debug("Failed fetching watched items from section %s: %s", section.title, exc)
+            logger.debug(
+                "Failed fetching watched items from section %s: %s", section.title, exc
+            )
 
     return movies, episodes
 
@@ -543,6 +637,104 @@ def update_trakt(
     trakt_request("POST", "/sync/history", headers, json=payload)
     logger.info(
         "Sent %d movies and %d episodes to Trakt",
+        len(payload["movies"]),
+        len(payload["episodes"]),
+    )
+
+
+def get_simkl_history(
+    headers: dict,
+) -> Tuple[
+    Dict[str, Tuple[str, Optional[int]]],
+    Dict[str, Tuple[str, str]],
+]:
+    """Return Simkl history keyed by IMDb or TMDb GUID."""
+    movies: Dict[str, Tuple[str, Optional[int]]] = {}
+    episodes: Dict[str, Tuple[str, str]] = {}
+
+    page = 1
+    logger.info("Fetching Simkl history…")
+    while True:
+        resp = simkl_request(
+            "GET",
+            "/sync/history",
+            headers,
+            params={"page": page, "limit": 100},
+        )
+        data = resp.json()
+        if not data:
+            break
+        for item in data:
+            if item.get("type") == "movie":
+                m = item.get("movie", {})
+                ids = m.get("ids", {})
+                guid = None
+                if ids.get("imdb"):
+                    guid = f"imdb://{ids['imdb']}"
+                elif ids.get("tmdb"):
+                    guid = f"tmdb://{ids['tmdb']}"
+                if guid and guid not in movies:
+                    movies[guid] = (m.get("title", ""), normalize_year(m.get("year")))
+            elif item.get("type") == "episode":
+                e = item.get("episode", {})
+                show = item.get("show", {})
+                ids = e.get("ids", {})
+                guid = None
+                if ids.get("imdb"):
+                    guid = f"imdb://{ids['imdb']}"
+                elif ids.get("tmdb"):
+                    guid = f"tmdb://{ids['tmdb']}"
+                if guid and guid not in episodes:
+                    episodes[guid] = (
+                        show.get("title", ""),
+                        f"S{e.get('season'):02d}E{e.get('number'):02d}",
+                    )
+        page += 1
+
+    return movies, episodes
+
+
+def update_simkl(
+    headers: dict,
+    movies: List[Tuple[str, Optional[int], Optional[str], Optional[str]]],
+    episodes: List[Tuple[str, str, Optional[str], Optional[str]]],
+) -> None:
+    payload = {"movies": [], "episodes": []}
+
+    for title, year, watched_at, guid in movies:
+        movie_obj = {"title": title}
+        if year is not None:
+            movie_obj["year"] = year
+        if guid:
+            movie_obj["ids"] = guid_to_ids(guid)
+        if watched_at:
+            movie_obj["watched_at"] = watched_at
+        payload["movies"].append(movie_obj)
+
+    for show, code, watched_at, guid in episodes:
+        season = int(code[1:3])
+        number = int(code[4:6])
+        ep_obj = {"season": season, "number": number}
+        if guid:
+            ep_obj["ids"] = guid_to_ids(guid)
+        else:
+            show_obj = get_show_from_library(plex, show)
+            show_ids = guid_to_ids(best_guid(show_obj)) if show_obj else {}
+            if show_ids:
+                ep_obj["show"] = {"ids": show_ids}
+            else:
+                ep_obj["title"] = show
+        if watched_at:
+            ep_obj["watched_at"] = watched_at
+        payload["episodes"].append(ep_obj)
+
+    if not payload["movies"] and not payload["episodes"]:
+        logger.info("Nothing new to send to Simkl.")
+        return
+
+    simkl_request("POST", "/sync/history", headers, json=payload)
+    logger.info(
+        "Sent %d movies and %d episodes to Simkl",
         len(payload["movies"]),
         len(payload["episodes"]),
     )
@@ -755,13 +947,17 @@ def sync_liked_lists(plex, headers):
         return
     for like in likes:
         lst = like.get("list", {})
-        owner = lst.get("user", {}).get("ids", {}).get("slug") or lst.get("user", {}).get("username")
+        owner = lst.get("user", {}).get("ids", {}).get("slug") or lst.get(
+            "user", {}
+        ).get("username")
         slug = lst.get("ids", {}).get("slug")
         name = lst.get("name", slug)
         if not owner or not slug:
             continue
         try:
-            items = trakt_request("GET", f"/users/{owner}/lists/{slug}/items", headers).json()
+            items = trakt_request(
+                "GET", f"/users/{owner}/lists/{slug}/items", headers
+            ).json()
         except Exception as exc:
             logger.error("Failed to fetch list %s/%s: %s", owner, slug, exc)
             continue
@@ -805,7 +1001,9 @@ def sync_collections_to_trakt(plex, headers):
     """Create or update Trakt lists from Plex collections."""
     try:
         user_data = trakt_request("GET", "/users/settings", headers).json()
-        username = user_data.get("user", {}).get("ids", {}).get("slug") or user_data.get("user", {}).get("username")
+        username = user_data.get("user", {}).get("ids", {}).get(
+            "slug"
+        ) or user_data.get("user", {}).get("username")
         lists = trakt_request("GET", f"/users/{username}/lists", headers).json()
     except Exception as exc:
         logger.error("Failed to fetch Trakt lists: %s", exc)
@@ -930,7 +1128,9 @@ def sync_watchlist(plex, headers, plex_history, trakt_history):
         payload["shows"] = shows_to_add
     if payload:
         trakt_request("POST", "/sync/watchlist", headers, json=payload)
-        logger.info("Added %d items to Trakt watchlist", len(movies_to_add) + len(shows_to_add))
+        logger.info(
+            "Added %d items to Trakt watchlist", len(movies_to_add) + len(shows_to_add)
+        )
 
     # Add Trakt watchlist items to Plex
     add_to_plex = []
@@ -974,10 +1174,19 @@ def sync_watchlist(plex, headers, plex_history, trakt_history):
                 guid = f"imdb://{ids['imdb']}"
             elif ids.get("tmdb"):
                 guid = f"tmdb://{ids['tmdb']}"
-            if guid and (guid in plex_history or guid in trakt_history) and guid not in plex_guids:
+            if (
+                guid
+                and (guid in plex_history or guid in trakt_history)
+                and guid not in plex_guids
+            ):
                 remove.append({"ids": guid_to_ids(guid)})
     if remove:
-        trakt_request("POST", "/sync/watchlist/remove", headers, json={"movies": remove, "shows": remove})
+        trakt_request(
+            "POST",
+            "/sync/watchlist/remove",
+            headers,
+            json={"movies": remove, "shows": remove},
+        )
         logger.info("Removed %d items from Trakt watchlist", len(remove))
 
 
@@ -992,9 +1201,15 @@ def sync():
     plex_token = os.environ.get("PLEX_TOKEN")
     trakt_token = os.environ.get("TRAKT_ACCESS_TOKEN")
     trakt_client_id = os.environ.get("TRAKT_CLIENT_ID")
+    simkl_enabled = os.environ.get("SIMKL_SYNC_ACTIVATED", "false").lower() == "true"
+    simkl_token = os.environ.get("SIMKL_ACCESS_TOKEN")
+    simkl_client_id = os.environ.get("SIMKL_CLIENT_ID")
 
     if not all([plex_baseurl, plex_token, trakt_token, trakt_client_id]):
         logger.error("Missing environment variables for Plex or Trakt.")
+        return
+    if simkl_enabled and not all([simkl_token, simkl_client_id]):
+        logger.error("Simkl sync enabled but SIMKL credentials are missing.")
         return
 
     plex = PlexServer(plex_baseurl, plex_token)
@@ -1006,6 +1221,13 @@ def sync():
         "trakt-api-version": "2",
         "trakt-api-key": trakt_client_id,
     }
+    simkl_headers = None
+    if simkl_enabled:
+        simkl_headers = {
+            "Authorization": f"Bearer {simkl_token}",
+            "Content-Type": "application/json",
+            "simkl-api-key": simkl_client_id,
+        }
 
     if SYNC_COLLECTION:
         try:
@@ -1036,6 +1258,19 @@ def sync():
     trakt_movie_guids = set(trakt_movies.keys())
     trakt_episode_guids = set(trakt_episodes.keys())
 
+    if simkl_enabled:
+        try:
+            simkl_movies, simkl_episodes = get_simkl_history(simkl_headers)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed to retrieve Simkl history: %s", exc)
+            simkl_movies, simkl_episodes = {}, {}
+        simkl_movie_guids = set(simkl_movies.keys())
+        simkl_episode_guids = set(simkl_episodes.keys())
+    else:
+        simkl_movies, simkl_episodes = {}, {}
+        simkl_movie_guids = set()
+        simkl_episode_guids = set()
+
     logger.info(
         "Plex history:   %d movies, %d episodes",
         len(plex_movie_guids),
@@ -1046,30 +1281,57 @@ def sync():
         len(trakt_movie_guids),
         len(trakt_episode_guids),
     )
+    if simkl_enabled:
+        logger.info(
+            "Simkl history:  %d movies, %d episodes",
+            len(simkl_movie_guids),
+            len(simkl_episode_guids),
+        )
 
     new_movies = [
         (data["title"], data["year"], data["watched_at"], guid)
         for guid, data in plex_movies.items()
-        if guid not in trakt_movie_guids
+        if guid not in trakt_movie_guids and guid not in simkl_movie_guids
     ]
     new_episodes = [
         (data["show"], data["code"], data["watched_at"], guid)
         for guid, data in plex_episodes.items()
-        if guid not in trakt_episode_guids
+        if guid not in trakt_episode_guids and guid not in simkl_episode_guids
     ]
 
     # Permite desactivar la sync de vistos desde la interfaz
     if SYNC_WATCHED:
         try:
             update_trakt(headers, new_movies, new_episodes)
+            if simkl_enabled:
+                update_simkl(simkl_headers, new_movies, new_episodes)
         except Exception as exc:  # noqa: BLE001
-            logger.error("Failed updating Trakt history: %s", exc)
+            logger.error("Failed updating Trakt/Simkl history: %s", exc)
     missing_movies = {
-        (title, year, guid) for guid, (title, year) in trakt_movies.items() if guid not in plex_movie_guids
+        (title, year, guid)
+        for guid, (title, year) in trakt_movies.items()
+        if guid not in plex_movie_guids
     }
     missing_episodes = {
-        (show, code, guid) for guid, (show, code) in trakt_episodes.items() if guid not in plex_episode_guids
+        (show, code, guid)
+        for guid, (show, code) in trakt_episodes.items()
+        if guid not in plex_episode_guids
     }
+    if simkl_enabled:
+        missing_movies.update(
+            {
+                (title, year, guid)
+                for guid, (title, year) in simkl_movies.items()
+                if guid not in plex_movie_guids
+            }
+        )
+        missing_episodes.update(
+            {
+                (show, code, guid)
+                for guid, (show, code) in simkl_episodes.items()
+                if guid not in plex_episode_guids
+            }
+        )
     try:
         update_plex(plex, missing_movies, missing_episodes)
     except Exception as exc:  # noqa: BLE001
@@ -1086,7 +1348,10 @@ def sync():
     if SYNC_WATCHLISTS:
         try:
             sync_watchlist(
-                plex, headers, plex_movie_guids | plex_episode_guids, trakt_movie_guids | trakt_episode_guids
+                plex,
+                headers,
+                plex_movie_guids | plex_episode_guids,
+                trakt_movie_guids | trakt_episode_guids,
             )
         except TraktAccountLimitError as exc:
             logger.error("Watchlist sync skipped: %s", exc)
@@ -1099,6 +1364,7 @@ def sync():
 # --------------------------------------------------------------------------- #
 # BACKUP HANDLING
 # --------------------------------------------------------------------------- #
+
 
 def fetch_trakt_history_full(headers) -> list:
     """Return full watch history from Trakt."""
@@ -1246,9 +1512,13 @@ def index():
     global SYNC_INTERVAL_MINUTES, SYNC_COLLECTION, SYNC_RATINGS, SYNC_WATCHED, SYNC_LIKED_LISTS, SYNC_WATCHLISTS, LIVE_SYNC
 
     load_trakt_tokens()
+    load_simkl_tokens()
+    simkl_enabled = os.environ.get("SIMKL_SYNC_ACTIVATED", "false").lower() == "true"
 
     # 1) Initial authorization
-    if not os.environ.get("TRAKT_ACCESS_TOKEN") or not os.environ.get("TRAKT_REFRESH_TOKEN"):
+    if not os.environ.get("TRAKT_ACCESS_TOKEN") or not os.environ.get(
+        "TRAKT_REFRESH_TOKEN"
+    ):
         if request.method == "POST":
             code = request.form.get("code", "").strip()
             if code and exchange_code_for_tokens(code):
@@ -1259,7 +1529,20 @@ def index():
             f"?response_type=code&client_id={os.environ.get('TRAKT_CLIENT_ID')}"
             f"&redirect_uri={TRAKT_REDIRECT_URI}"
         )
-        return render_template("authorize.html", auth_url=auth_url)
+        return render_template("authorize.html", auth_url=auth_url, service="Trakt")
+
+    if simkl_enabled and not os.environ.get("SIMKL_ACCESS_TOKEN"):
+        if request.method == "POST":
+            code = request.form.get("code", "").strip()
+            if code and exchange_code_for_simkl_tokens(code):
+                start_scheduler()
+                return redirect(url_for("index"))
+        auth_url = (
+            "https://simkl.com/oauth/authorize"
+            f"?response_type=code&client_id={os.environ.get('SIMKL_CLIENT_ID')}"
+            f"&redirect_uri={SIMKL_REDIRECT_URI}"
+        )
+        return render_template("authorize.html", auth_url=auth_url, service="Simkl")
 
     # 2) Change interval
     if request.method == "POST":
@@ -1280,7 +1563,9 @@ def index():
             replace_existing=True,
             next_run_time=datetime.now(),
         )
-        return redirect(url_for("index", message="Sync started successfully!", mtype="success"))
+        return redirect(
+            url_for("index", message="Sync started successfully!", mtype="success")
+        )
 
     message = request.args.get("message")
     mtype = request.args.get("mtype", "success") if message else None
@@ -1306,7 +1591,9 @@ def index():
 @app.route("/stop", methods=["POST"])
 def stop():
     stop_scheduler()
-    return redirect(url_for("index", message="Sync stopped successfully!", mtype="stopped"))
+    return redirect(
+        url_for("index", message="Sync stopped successfully!", mtype="stopped")
+    )
 
 
 @app.route("/backup")
@@ -1322,7 +1609,9 @@ def download_backup():
     trakt_token = os.environ.get("TRAKT_ACCESS_TOKEN")
     trakt_client_id = os.environ.get("TRAKT_CLIENT_ID")
     if not trakt_token or not trakt_client_id:
-        return redirect(url_for("backup_page", message="Missing Trakt credentials", mtype="error"))
+        return redirect(
+            url_for("backup_page", message="Missing Trakt credentials", mtype="error")
+        )
     headers = {
         "Authorization": f"Bearer {trakt_token}",
         "Content-Type": "application/json",
@@ -1347,7 +1636,9 @@ def restore_backup_route():
     trakt_token = os.environ.get("TRAKT_ACCESS_TOKEN")
     trakt_client_id = os.environ.get("TRAKT_CLIENT_ID")
     if not trakt_token or not trakt_client_id:
-        return redirect(url_for("backup_page", message="Missing Trakt credentials", mtype="error"))
+        return redirect(
+            url_for("backup_page", message="Missing Trakt credentials", mtype="error")
+        )
     headers = {
         "Authorization": f"Bearer {trakt_token}",
         "Content-Type": "application/json",
@@ -1357,7 +1648,9 @@ def restore_backup_route():
     }
     file = request.files.get("backup")
     if not file:
-        return redirect(url_for("backup_page", message="No file uploaded", mtype="error"))
+        return redirect(
+            url_for("backup_page", message="No file uploaded", mtype="error")
+        )
     try:
         data = json.load(file)
     except Exception:
@@ -1387,9 +1680,15 @@ def test_connections() -> bool:
     plex_token = os.environ.get("PLEX_TOKEN")
     trakt_token = os.environ.get("TRAKT_ACCESS_TOKEN")
     trakt_client_id = os.environ.get("TRAKT_CLIENT_ID")
+    simkl_enabled = os.environ.get("SIMKL_SYNC_ACTIVATED", "false").lower() == "true"
+    simkl_token = os.environ.get("SIMKL_ACCESS_TOKEN")
+    simkl_client_id = os.environ.get("SIMKL_CLIENT_ID")
 
     if not all([plex_baseurl, plex_token, trakt_token, trakt_client_id]):
         logger.error("Missing environment variables for Plex or Trakt.")
+        return False
+    if simkl_enabled and not all([simkl_token, simkl_client_id]):
+        logger.error("Simkl sync enabled but SIMKL credentials are missing.")
         return False
 
     try:
@@ -1412,6 +1711,19 @@ def test_connections() -> bool:
     except Exception as exc:
         logger.error("Failed to connect to Trakt: %s", exc)
         return False
+
+    if simkl_enabled:
+        s_headers = {
+            "Authorization": f"Bearer {simkl_token}",
+            "Content-Type": "application/json",
+            "simkl-api-key": simkl_client_id,
+        }
+        try:
+            simkl_request("GET", "/sync/history", s_headers, params={"limit": 1})
+            logger.info("Successfully connected to Simkl.")
+        except Exception as exc:
+            logger.error("Failed to connect to Simkl: %s", exc)
+            return False
 
     return True
 

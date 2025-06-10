@@ -50,10 +50,14 @@ plex = None  # will hold PlexServer instance
 # --------------------------------------------------------------------------- #
 # TRAKT / SIMKL OAUTH CONSTANTS
 # --------------------------------------------------------------------------- #
-TRAKT_REDIRECT_URI = "urn:ietf:wg:oauth:2.0:oob"
+TRAKT_REDIRECT_URI = os.environ.get(
+    "TRAKT_REDIRECT_URI", "urn:ietf:wg:oauth:2.0:oob"
+)
 TOKEN_FILE = "trakt_tokens.json"
 
-SIMKL_REDIRECT_URI = "urn:ietf:wg:oauth:2.0:oob"
+SIMKL_REDIRECT_URI = os.environ.get(
+    "SIMKL_REDIRECT_URI", "urn:ietf:wg:oauth:2.0:oob"
+)
 SIMKL_TOKEN_FILE = "simkl_tokens.json"
 
 
@@ -1525,6 +1529,7 @@ def index():
     if not os.environ.get("TRAKT_ACCESS_TOKEN") or not os.environ.get(
         "TRAKT_REFRESH_TOKEN"
     ):
+        prefill = request.args.get("code", "").strip()
         if request.method == "POST":
             code = request.form.get("code", "").strip()
             if code and exchange_code_for_tokens(code):
@@ -1535,9 +1540,12 @@ def index():
             f"?response_type=code&client_id={os.environ.get('TRAKT_CLIENT_ID')}"
             f"&redirect_uri={TRAKT_REDIRECT_URI}"
         )
-        return render_template("authorize.html", auth_url=auth_url, service="Trakt")
+        return render_template(
+            "authorize.html", auth_url=auth_url, service="Trakt", code=prefill
+        )
 
     if simkl_enabled and not os.environ.get("SIMKL_ACCESS_TOKEN"):
+        prefill = request.args.get("code", "").strip()
         if request.method == "POST":
             code = request.form.get("code", "").strip()
             if code and exchange_code_for_simkl_tokens(code):
@@ -1548,7 +1556,9 @@ def index():
             f"?response_type=code&client_id={os.environ.get('SIMKL_CLIENT_ID')}"
             f"&redirect_uri={SIMKL_REDIRECT_URI}"
         )
-        return render_template("authorize.html", auth_url=auth_url, service="Simkl")
+        return render_template(
+            "authorize.html", auth_url=auth_url, service="Simkl", code=prefill
+        )
 
     # 2) Change interval
     if request.method == "POST":
@@ -1592,6 +1602,18 @@ def index():
         mtype=mtype,
         next_run=next_run,
     )
+
+
+@app.route("/trakt")
+def trakt_callback():
+    code = request.args.get("code", "")
+    return redirect(url_for("index", code=code))
+
+
+@app.route("/simkl")
+def simkl_callback():
+    code = request.args.get("code", "")
+    return redirect(url_for("index", code=code))
 
 
 @app.route("/stop", methods=["POST"])

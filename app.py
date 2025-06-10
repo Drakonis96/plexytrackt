@@ -1842,4 +1842,4 @@ if __name__ == "__main__":
     logger.info("Starting PlexyTrackt application")
     load_trakt_tokens()
     start_scheduler()
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=5030)

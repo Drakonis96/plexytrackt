@@ -21,9 +21,9 @@ The application expects the following API credentials:
 - `SIMKL_CLIENT_ID` – client ID for your Simkl application (optional if only using Trakt).
 - `SIMKL_CLIENT_SECRET` – client secret for your Simkl application (optional if only using Trakt).
 - `TRAKT_REDIRECT_URI` – OAuth redirect URI for Trakt (defaults to
-  `http://localhost:5000/oauth/trakt`).
+  `http://localhost:5030/oauth/trakt`).
 - `SIMKL_REDIRECT_URI` – OAuth redirect URI for Simkl (defaults to
-  `http://localhost:5000/oauth/simkl`).
+  `http://localhost:5030/oauth/simkl`).
 - `TZ` – timezone for log timestamps, defaults to `Europe/Madrid`.
 
 You must set the Plex variables above and at least one pair of Trakt or Simkl
@@ -72,9 +72,9 @@ the application will trigger an immediate sync whenever an event is received.
 ## Getting Trakt API credentials
 
 1. Log in to your Trakt account and open <https://trakt.tv/oauth/applications>.
-2. Create a new application. Any name will work and you can use `urn:ietf:wg:oauth:2.0:oob` as the redirect URL. If you want the authorization code to be filled automatically, set the redirect URL to something like `http://localhost:5000/oauth/trakt` and use the same value in the `TRAKT_REDIRECT_URI` environment variable.
+2. Create a new application. Any name will work and you can use `urn:ietf:wg:oauth:2.0:oob` as the redirect URL. If you want the authorization code to be filled automatically, set the redirect URL to something like `http://localhost:5030/oauth/trakt` and use the same value in the `TRAKT_REDIRECT_URI` environment variable.
 3. After saving the app you will see a **Client ID** and **Client Secret**. Keep them handy.
-4. Start PlexyTrack and open `http://localhost:5000` in your browser. From the **Config.** tab you can authorize PlexyTrack on Trakt. After authorizing, Trakt will redirect you to the **OAuth** tab where the code will appear automatically.
+4. Start PlexyTrack and open `http://localhost:5030` in your browser. From the **Config.** tab you can authorize PlexyTrack on Trakt. After authorizing, Trakt will redirect you to the **OAuth** tab where the code will appear automatically.
 
 
 ## Running with Docker Compose
@@ -89,8 +89,8 @@ TRAKT_CLIENT_ID=YOUR_TRAKT_CLIENT_ID
 TRAKT_CLIENT_SECRET=YOUR_TRAKT_CLIENT_SECRET
 SIMKL_CLIENT_ID=YOUR_SIMKL_CLIENT_ID
 SIMKL_CLIENT_SECRET=YOUR_SIMKL_CLIENT_SECRET
-TRAKT_REDIRECT_URI=http://localhost:5000/oauth/trakt
-SIMKL_REDIRECT_URI=http://localhost:5000/oauth/simkl
+TRAKT_REDIRECT_URI=http://localhost:5030/oauth/trakt
+SIMKL_REDIRECT_URI=http://localhost:5030/oauth/simkl
 TZ=Europe/Madrid
 ```
 
@@ -108,7 +108,7 @@ file:
 docker-compose -f docker-compose-local.yml up --build
 ```
 
-4. Visit `http://localhost:5000` in your browser. You can adjust the sync interval on the page and also stop the synchronization job at any time using the **Stop Sync** button. The background job starts automatically when the container is running.
+4. Visit `http://localhost:5030` in your browser. You can adjust the sync interval on the page and also stop the synchronization job at any time using the **Stop Sync** button. The background job starts automatically when the container is running.
 
 That's it! The container will continue to sync your Plex account with Trakt and/or Simkl according to the interval you set.
 

@@ -742,7 +742,7 @@ def get_simkl_history(
     logger.info("Fetching Simkl history…")
     resp = simkl_request(
         "GET",
-        "/sync/get-all-items",
+        "/sync/all-items",
         headers,
         params={"extended": "full", "episode_watched_at": "yes"},
     )
@@ -2105,7 +2105,7 @@ def test_connections() -> bool:
             "simkl-api-key": simkl_client_id,
         }
         try:
-            simkl_request("GET", "/sync/get-all-items", s_headers)
+            simkl_request("GET", "/sync/all-items", s_headers)
             logger.info("Successfully connected to Simkl.")
         except Exception as exc:
             logger.error("Failed to connect to Simkl: %s", exc)

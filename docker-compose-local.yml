@@ -14,6 +14,7 @@ services:
       - TRAKT_CLIENT_SECRET=${TRAKT_CLIENT_SECRET}
       - SIMKL_CLIENT_ID=${SIMKL_CLIENT_ID}
       - SIMKL_CLIENT_SECRET=${SIMKL_CLIENT_SECRET}
-      - TRAKT_REDIRECT_URI=${TRAKT_REDIRECT_URI:-http://localhost:5030/oauth/trakt}
-      - SIMKL_REDIRECT_URI=${SIMKL_REDIRECT_URI:-http://localhost:5030/oauth/simkl}
+      # Optional custom redirect URIs
+      - TRAKT_REDIRECT_URI=${TRAKT_REDIRECT_URI:-}
+      - SIMKL_REDIRECT_URI=${SIMKL_REDIRECT_URI:-}
 

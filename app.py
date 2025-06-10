@@ -51,6 +51,8 @@ SYNC_WATCHED = True  # ahora sí se respeta este flag
 SYNC_LIKED_LISTS = False
 SYNC_WATCHLISTS = False
 LIVE_SYNC = False
+SYNC_PROVIDER = "none"  # trakt | simkl | none
+PROVIDER_FILE = "provider.json"
 scheduler = BackgroundScheduler()
 plex = None  # will hold PlexServer instance
 
@@ -62,6 +64,32 @@ TOKEN_FILE = "trakt_tokens.json"
 
 SIMKL_REDIRECT_URI = os.environ.get("SIMKL_REDIRECT_URI")
 SIMKL_TOKEN_FILE = "simkl_tokens.json"
+
+
+# --------------------------------------------------------------------------- #
+# PROVIDER SELECTION
+# --------------------------------------------------------------------------- #
+def load_provider() -> None:
+    """Load selected sync provider from file."""
+    global SYNC_PROVIDER
+    if os.path.exists(PROVIDER_FILE):
+        try:
+            with open(PROVIDER_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            SYNC_PROVIDER = data.get("provider", "none")
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed to load provider: %s", exc)
+
+
+def save_provider(provider: str) -> None:
+    """Persist selected sync provider to file."""
+    global SYNC_PROVIDER
+    SYNC_PROVIDER = provider
+    try:
+        with open(PROVIDER_FILE, "w", encoding="utf-8") as f:
+            json.dump({"provider": provider}, f, indent=2)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Failed to save provider: %s", exc)
 
 
 # --------------------------------------------------------------------------- #
@@ -1263,14 +1291,14 @@ def sync():
     simkl_token = os.environ.get("SIMKL_ACCESS_TOKEN")
     simkl_client_id = os.environ.get("SIMKL_CLIENT_ID")
 
-    trakt_enabled = bool(trakt_token and trakt_client_id)
-    simkl_enabled = bool(simkl_token and simkl_client_id)
+    trakt_enabled = SYNC_PROVIDER == "trakt" and bool(trakt_token and trakt_client_id)
+    simkl_enabled = SYNC_PROVIDER == "simkl" and bool(simkl_token and simkl_client_id)
 
     if not all([plex_baseurl, plex_token]):
         logger.error("Missing environment variables for Plex.")
         return
     if not (trakt_enabled or simkl_enabled):
-        logger.error("Missing environment variables for Trakt or Simkl.")
+        logger.error("Missing environment variables for selected provider.")
         return
 
     plex = PlexServer(plex_baseurl, plex_token)
@@ -1583,6 +1611,7 @@ def index():
 
     load_trakt_tokens()
     load_simkl_tokens()
+    load_provider()
 
     # 2) Change interval
     if request.method == "POST":
@@ -1660,17 +1689,23 @@ def simkl_callback():
     return redirect(url_for("oauth_callback", service="simkl", code=code))
 
 
-@app.route("/config")
+@app.route("/config", methods=["GET", "POST"])
 def config_page():
     """Display configuration status for Trakt and Simkl."""
     load_trakt_tokens()
     load_simkl_tokens()
+    load_provider()
+    if request.method == "POST":
+        provider = request.form.get("provider", "none")
+        save_provider(provider)
+        return redirect(url_for("config_page"))
     trakt_configured = bool(os.environ.get("TRAKT_ACCESS_TOKEN"))
     simkl_configured = bool(os.environ.get("SIMKL_ACCESS_TOKEN"))
     return render_template(
         "config.html",
         trakt_configured=trakt_configured,
         simkl_configured=simkl_configured,
+        provider=SYNC_PROVIDER,
     )
 
 
@@ -1806,14 +1841,14 @@ def test_connections() -> bool:
     simkl_token = os.environ.get("SIMKL_ACCESS_TOKEN")
     simkl_client_id = os.environ.get("SIMKL_CLIENT_ID")
 
-    trakt_enabled = bool(trakt_token and trakt_client_id)
-    simkl_enabled = bool(simkl_token and simkl_client_id)
+    trakt_enabled = SYNC_PROVIDER == "trakt" and bool(trakt_token and trakt_client_id)
+    simkl_enabled = SYNC_PROVIDER == "simkl" and bool(simkl_token and simkl_client_id)
 
     if not all([plex_baseurl, plex_token]):
         logger.error("Missing environment variables for Plex.")
         return False
     if not (trakt_enabled or simkl_enabled):
-        logger.error("Missing environment variables for Trakt or Simkl.")
+        logger.error("Missing environment variables for selected provider.")
         return False
 
     try:
@@ -1892,5 +1927,6 @@ def stop_scheduler():
 if __name__ == "__main__":
     logger.info("Starting PlexyTrackt application")
     load_trakt_tokens()
+    load_provider()
     start_scheduler()
     app.run(host="0.0.0.0", port=5030)

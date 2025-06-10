@@ -1297,8 +1297,8 @@ def sync():
 # BACKUP HANDLING
 # --------------------------------------------------------------------------- #
 
-def fetch_trakt_history_full(headers) -> list:
-    """Return full watch history from Trakt."""
+def fetch_trakt_history_full(headers, base_url: str = TRAKT_API_URL) -> list:
+    """Return full watch history from Trakt/Simkl."""
     all_items = []
     page = 1
     while True:
@@ -1306,6 +1306,7 @@ def fetch_trakt_history_full(headers) -> list:
             "GET",
             "/sync/history",
             headers,
+            base_url=base_url,
             params={"page": page, "limit": 100},
         )
         data = resp.json()
@@ -1316,8 +1317,8 @@ def fetch_trakt_history_full(headers) -> list:
     return all_items
 
 
-def fetch_trakt_ratings(headers) -> list:
-    """Return all ratings from Trakt."""
+def fetch_trakt_ratings(headers, base_url: str = TRAKT_API_URL) -> list:
+    """Return all ratings from Trakt/Simkl."""
     all_items = []
     page = 1
     while True:
@@ -1325,6 +1326,7 @@ def fetch_trakt_ratings(headers) -> list:
             "GET",
             "/sync/ratings",
             headers,
+            base_url=base_url,
             params={"page": page, "limit": 100},
         )
         data = resp.json()
@@ -1335,15 +1337,25 @@ def fetch_trakt_ratings(headers) -> list:
     return all_items
 
 
-def fetch_trakt_watchlist(headers) -> dict:
-    """Return movies and shows from the Trakt watchlist."""
-    movies = trakt_request("GET", "/sync/watchlist/movies", headers).json()
-    shows = trakt_request("GET", "/sync/watchlist/shows", headers).json()
+def fetch_trakt_watchlist(headers, base_url: str = TRAKT_API_URL) -> dict:
+    """Return movies and shows from the Trakt/Simkl watchlist."""
+    movies = trakt_request(
+        "GET",
+        "/sync/watchlist/movies",
+        headers,
+        base_url=base_url,
+    ).json()
+    shows = trakt_request(
+        "GET",
+        "/sync/watchlist/shows",
+        headers,
+        base_url=base_url,
+    ).json()
     return {"movies": movies, "shows": shows}
 
 
-def restore_backup(headers, data: dict) -> None:
-    """Restore Trakt data from backup dict."""
+def restore_backup(headers, data: dict, base_url: str = TRAKT_API_URL) -> None:
+    """Restore Trakt or Simkl data from backup dict."""
     history = data.get("history", [])
     movies = []
     episodes = []
@@ -1381,7 +1393,7 @@ def restore_backup(headers, data: dict) -> None:
     if episodes:
         payload["episodes"] = episodes
     if payload:
-        trakt_request("POST", "/sync/history", headers, json=payload)
+        trakt_request("POST", "/sync/history", headers, base_url=base_url, json=payload)
 
     ratings = data.get("ratings", [])
     r_movies, r_shows, r_episodes, r_seasons = [], [], [], []
@@ -1411,7 +1423,7 @@ def restore_backup(headers, data: dict) -> None:
     if r_episodes:
         payload["episodes"] = r_episodes
     if payload:
-        trakt_request("POST", "/sync/ratings", headers, json=payload)
+        trakt_request("POST", "/sync/ratings", headers, base_url=base_url, json=payload)
 
     watchlist = data.get("watchlist", {})
     wl_movies = []
@@ -1432,7 +1444,7 @@ def restore_backup(headers, data: dict) -> None:
     if wl_shows:
         payload["shows"] = wl_shows
     if payload:
-        trakt_request("POST", "/sync/watchlist", headers, json=payload)
+        trakt_request("POST", "/sync/watchlist", headers, base_url=base_url, json=payload)
 
 
 # --------------------------------------------------------------------------- #
@@ -1558,6 +1570,31 @@ def download_backup():
     return send_file(tmp_path, as_attachment=True, download_name="trakt_backup.json")
 
 
+@app.route("/backup/download_simkl")
+def download_simkl_backup():
+    load_simkl_tokens()
+    simkl_token = os.environ.get("SIMKL_ACCESS_TOKEN")
+    simkl_client_id = os.environ.get("SIMKL_CLIENT_ID")
+    if not simkl_token or not simkl_client_id:
+        return redirect(url_for("backup_page", message="Missing Simkl credentials", mtype="error"))
+    headers = {
+        "Authorization": f"Bearer {simkl_token}",
+        "Content-Type": "application/json",
+        "User-Agent": "PlexyTrackt/1.0.0",
+        "simkl-api-version": "2",
+        "simkl-api-key": simkl_client_id,
+    }
+    data = {
+        "history": fetch_trakt_history_full(headers, base_url=SIMKL_API_URL),
+        "ratings": fetch_trakt_ratings(headers, base_url=SIMKL_API_URL),
+        "watchlist": fetch_trakt_watchlist(headers, base_url=SIMKL_API_URL),
+    }
+    tmp_path = "simkl_backup.json"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+    return send_file(tmp_path, as_attachment=True, download_name="simkl_backup.json")
+
+
 @app.route("/backup/restore", methods=["POST"])
 def restore_backup_route():
     load_trakt_tokens()
@@ -1581,6 +1618,35 @@ def restore_backup_route():
         return redirect(url_for("backup_page", message="Invalid JSON", mtype="error"))
     try:
         restore_backup(headers, data)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Failed to restore backup: %s", exc)
+        return redirect(url_for("backup_page", message="Restore failed", mtype="error"))
+    return redirect(url_for("backup_page", message="Backup restored", mtype="success"))
+
+
+@app.route("/backup/restore_simkl", methods=["POST"])
+def restore_simkl_backup_route():
+    load_simkl_tokens()
+    simkl_token = os.environ.get("SIMKL_ACCESS_TOKEN")
+    simkl_client_id = os.environ.get("SIMKL_CLIENT_ID")
+    if not simkl_token or not simkl_client_id:
+        return redirect(url_for("backup_page", message="Missing Simkl credentials", mtype="error"))
+    headers = {
+        "Authorization": f"Bearer {simkl_token}",
+        "Content-Type": "application/json",
+        "User-Agent": "PlexyTrackt/1.0.0",
+        "simkl-api-version": "2",
+        "simkl-api-key": simkl_client_id,
+    }
+    file = request.files.get("backup")
+    if not file:
+        return redirect(url_for("backup_page", message="No file uploaded", mtype="error"))
+    try:
+        data = json.load(file)
+    except Exception:
+        return redirect(url_for("backup_page", message="Invalid JSON", mtype="error"))
+    try:
+        restore_backup(headers, data, base_url=SIMKL_API_URL)
     except Exception as exc:  # noqa: BLE001
         logger.error("Failed to restore backup: %s", exc)
         return redirect(url_for("backup_page", message="Restore failed", mtype="error"))

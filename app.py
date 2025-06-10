@@ -787,6 +787,8 @@ def update_simkl(
     episodes: List[Tuple[str, str, Optional[str], Optional[str]]],
 ) -> None:
     payload = {"movies": [], "episodes": []}
+    list_movies = []
+    list_shows: Dict[str, dict] = {}
 
     for title, year, watched_at, guid in movies:
         movie_obj = {"title": title}
@@ -797,6 +799,15 @@ def update_simkl(
         if watched_at:
             movie_obj["watched_at"] = watched_at
         payload["movies"].append(movie_obj)
+
+        list_movie = {"title": title, "to": "completed"}
+        if year is not None:
+            list_movie["year"] = year
+        if guid:
+            list_movie["ids"] = guid_to_ids(guid)
+        if watched_at:
+            list_movie["watched_at"] = watched_at
+        list_movies.append(list_movie)
 
     for show, code, watched_at, guid in episodes:
         season = int(code[1:3])
@@ -815,6 +826,25 @@ def update_simkl(
             ep_obj["watched_at"] = watched_at
         payload["episodes"].append(ep_obj)
 
+        show_obj = get_show_from_library(plex, show)
+        show_guid = best_guid(show_obj) if show_obj else None
+        key = show_guid if show_guid else show
+        show_payload = list_shows.get(key)
+        if not show_payload:
+            show_payload = {"title": show, "to": "completed"}
+            if show_obj and getattr(show_obj, "year", None):
+                show_payload["year"] = normalize_year(show_obj.year)
+            if show_guid:
+                show_payload["ids"] = guid_to_ids(show_guid)
+            if watched_at:
+                show_payload["watched_at"] = watched_at
+            list_shows[key] = show_payload
+        else:
+            if watched_at and (
+                "watched_at" not in show_payload or watched_at > show_payload["watched_at"]
+            ):
+                show_payload["watched_at"] = watched_at
+
     if not payload["movies"] and not payload["episodes"]:
         logger.info("Nothing new to send to Simkl.")
         return
@@ -825,6 +855,19 @@ def update_simkl(
         len(payload["movies"]),
         len(payload["episodes"]),
     )
+
+    if list_movies:
+        simkl_request("POST", "/sync/my-movies", headers, json={"movies": list_movies})
+        logger.info("Marked %d movies as completed on Simkl", len(list_movies))
+
+    if list_shows:
+        simkl_request(
+            "POST",
+            "/sync/my-shows",
+            headers,
+            json={"shows": list(list_shows.values())},
+        )
+        logger.info("Marked %d shows as completed on Simkl", len(list_shows))
 
 
 def update_plex(

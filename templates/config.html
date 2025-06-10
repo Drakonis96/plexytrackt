@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PlexyTrack - Config</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+</head>
+<body>
+    <div class="app-container">
+        <header class="app-header">
+            <img src="{{ url_for('static', filename='logo.png') }}" alt="PlexyTrack Logo" class="logo">
+            <h1>PlexyTrack</h1>
+            <nav class="app-nav">
+                <a href="{{ url_for('index') }}" class="nav-link">Sync</a>
+                <a href="{{ url_for('backup_page') }}" class="nav-link">Backup</a>
+                <a href="{{ url_for('config_page') }}" class="nav-link active">Config.</a>
+            </nav>
+        </header>
+
+        <main class="content-area">
+            <section class="card">
+                <h2>Trakt</h2>
+                {% if trakt_configured %}
+                <div class="status-message success">Trakt configured</div>
+                {% else %}
+                <div class="status-message error">Trakt not configured</div>
+                {% endif %}
+                <a href="{{ url_for('authorize_service', service='trakt') }}" class="button primary" style="margin-top:10px;">Configure</a>
+            </section>
+
+            <section class="card">
+                <h2>Simkl</h2>
+                {% if simkl_configured %}
+                <div class="status-message success">Simkl configured</div>
+                {% else %}
+                <div class="status-message error">Simkl not configured</div>
+                {% endif %}
+                <a href="{{ url_for('authorize_service', service='simkl') }}" class="button primary" style="margin-top:10px;">Configure</a>
+            </section>
+        </main>
+
+        <footer class="app-footer">
+            <p>MIT License. by Drakonis96</p>
+        </footer>
+    </div>
+
+    <script>
+        const msgs = document.querySelectorAll('.status-message');
+        msgs.forEach(msg => {
+            if (msg.textContent.trim() !== '') {
+                setTimeout(function() { msg.style.display = 'none'; }, 5000);
+            }
+        });
+    </script>
+</body>
+</html>

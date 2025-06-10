@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 output.log
 trakt_tokens.json
+simkl_tokens.json

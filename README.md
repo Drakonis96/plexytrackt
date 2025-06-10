@@ -59,7 +59,7 @@ the application will trigger an immediate sync whenever an event is received.
 1. Log in to your Trakt account and open <https://trakt.tv/oauth/applications>.
 2. Create a new application. Any name will work and you can use `urn:ietf:wg:oauth:2.0:oob` as the redirect URL.
 3. After saving the app you will see a **Client ID** and **Client Secret**. Keep them handy.
-4. Start PlexyTrack and open `http://localhost:5000` in your browser. The page will provide a link to authorize the application on Trakt. After authorizing, paste the code shown by Trakt into the form. The app will handle exchanging the code for tokens automatically.
+4. Start PlexyTrack and open `http://localhost:5000` in your browser. The page will provide a link to authorize the application on Trakt. After authorizing, paste the code shown by Trakt into the form. If you also supplied Simkl credentials (`SIMKL_CLIENT_ID` and `SIMKL_CLIENT_SECRET`), the page will display authorization links for both platforms so you can enter both codes at once. The app will handle exchanging the codes for tokens automatically.
 
 
 ## Running with Docker Compose

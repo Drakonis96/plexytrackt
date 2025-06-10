@@ -1458,9 +1458,42 @@ def index():
     load_simkl_tokens()
 
     # 1) Initial authorization
-    if SYNC_TO_TRAKT and (
+    trakt_missing = SYNC_TO_TRAKT and (
         not os.environ.get("TRAKT_ACCESS_TOKEN") or not os.environ.get("TRAKT_REFRESH_TOKEN")
-    ):
+    )
+    simkl_missing = SYNC_TO_SIMKL and not os.environ.get("SIMKL_ACCESS_TOKEN")
+
+    if trakt_missing and simkl_missing:
+        if request.method == "POST" and request.form.get("platform") == "both":
+            tcode = request.form.get("trakt_code", "").strip()
+            scode = request.form.get("simkl_code", "").strip()
+            success = True
+            if trakt_missing:
+                success = tcode and exchange_code_for_tokens(tcode)
+            if success and simkl_missing:
+                success = scode and exchange_simkl_code(scode)
+            if success:
+                start_scheduler()
+                return redirect(url_for("index"))
+        trakt_url = (
+            "https://trakt.tv/oauth/authorize"
+            f"?response_type=code&client_id={os.environ.get('TRAKT_CLIENT_ID')}"
+            f"&redirect_uri={TRAKT_REDIRECT_URI}"
+        )
+        simkl_url = (
+            "https://simkl.com/oauth/authorize"
+            f"?response_type=code&client_id={os.environ.get('SIMKL_CLIENT_ID')}"
+            f"&redirect_uri={SIMKL_REDIRECT_URI}"
+        )
+        return render_template(
+            "authorize_multi.html",
+            trakt_auth_url=trakt_url,
+            simkl_auth_url=simkl_url,
+            trakt_required=trakt_missing,
+            simkl_required=simkl_missing,
+        )
+
+    if trakt_missing:
         if request.method == "POST" and request.form.get("platform") == "trakt":
             code = request.form.get("code", "").strip()
             if code and exchange_code_for_tokens(code):
@@ -1473,7 +1506,7 @@ def index():
         )
         return render_template("authorize.html", auth_url=auth_url, platform="Trakt")
 
-    if SYNC_TO_SIMKL and not os.environ.get("SIMKL_ACCESS_TOKEN"):
+    if simkl_missing:
         if request.method == "POST" and request.form.get("platform") == "simkl":
             code = request.form.get("code", "").strip()
             if code and exchange_simkl_code(code):

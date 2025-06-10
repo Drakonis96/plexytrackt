@@ -1820,6 +1820,7 @@ def index():
         SYNC_LIKED_LISTS = request.form.get("liked_lists") is not None
         SYNC_WATCHLISTS = request.form.get("watchlists") is not None
         LIVE_SYNC = request.form.get("live_sync") is not None
+        start_scheduler()
         # Schedule an immediate sync without blocking the request
         scheduler.add_job(
             sync,
@@ -1895,6 +1896,10 @@ def config_page():
     if request.method == "POST":
         provider = request.form.get("provider", "none")
         save_provider(provider)
+        if provider == "none":
+            stop_scheduler()
+        else:
+            start_scheduler()
         return redirect(url_for("config_page"))
     trakt_configured = bool(os.environ.get("TRAKT_ACCESS_TOKEN"))
     simkl_configured = bool(os.environ.get("SIMKL_ACCESS_TOKEN"))
@@ -1914,9 +1919,13 @@ def authorize_service(service: str):
     if request.method == "POST":
         code = request.form.get("code", "").strip()
         if service == "trakt" and code and exchange_code_for_tokens(code):
+            if SYNC_PROVIDER == "none":
+                save_provider("trakt")
             start_scheduler()
             return redirect(url_for("config_page"))
         if service == "simkl" and code and exchange_code_for_simkl_tokens(code):
+            if SYNC_PROVIDER == "none":
+                save_provider("simkl")
             start_scheduler()
             return redirect(url_for("config_page"))
 

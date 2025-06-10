@@ -1277,6 +1277,122 @@ def sync_watchlist(plex, headers, plex_history, trakt_history):
         logger.info("Removed %d items from Trakt watchlist", len(remove))
 
 
+def sync_simkl_library(plex, headers):
+    """Add Plex movies and shows to Simkl My Movies and My TV Shows."""
+    movies = []
+    shows = []
+    for section in plex.library.sections():
+        if section.type == "movie":
+            for item in section.all():
+                m = {"title": item.title}
+                if getattr(item, "year", None):
+                    m["year"] = normalize_year(item.year)
+                guid = best_guid(item)
+                if guid:
+                    m["ids"] = guid_to_ids(guid)
+                movies.append(m)
+        elif section.type == "show":
+            for item in section.all():
+                s = {"title": item.title}
+                if getattr(item, "year", None):
+                    s["year"] = normalize_year(item.year)
+                guid = best_guid(item)
+                if guid:
+                    s["ids"] = guid_to_ids(guid)
+                shows.append(s)
+    if movies:
+        try:
+            simkl_request("POST", "/sync/my-movies", headers, json={"movies": movies})
+            logger.info("Synced %d Plex movies to Simkl My Movies", len(movies))
+        except Exception as exc:
+            logger.error("Failed syncing movies to Simkl: %s", exc)
+    if shows:
+        try:
+            simkl_request("POST", "/sync/my-shows", headers, json={"shows": shows})
+            logger.info("Synced %d Plex shows to Simkl My TV Shows", len(shows))
+        except Exception as exc:
+            logger.error("Failed syncing shows to Simkl: %s", exc)
+
+
+def sync_collections_to_simkl(plex, headers):
+    """Create or update Simkl lists from Plex collections."""
+    try:
+        user_data = simkl_request("GET", "/users/settings", headers).json()
+        username = user_data.get("user", {}).get("username") or user_data.get("user", {}).get("ids", {}).get("slug")
+        lists = simkl_request("GET", f"/users/{username}/lists", headers).json()
+    except Exception as exc:
+        logger.error("Failed to fetch Simkl lists: %s", exc)
+        return
+
+    slug_by_name = {l.get("name"): l.get("ids", {}).get("slug") for l in lists}
+
+    for sec in plex.library.sections():
+        if sec.type not in ("movie", "show"):
+            continue
+        for coll in sec.collections():
+            slug = slug_by_name.get(coll.title)
+            if not slug:
+                try:
+                    resp = simkl_request(
+                        "POST",
+                        f"/users/{username}/lists",
+                        headers,
+                        json={"name": coll.title},
+                    )
+                    slug = resp.json().get("ids", {}).get("slug")
+                    slug_by_name[coll.title] = slug
+                except Exception as exc:
+                    logger.error("Failed creating Simkl list %s: %s", coll.title, exc)
+                    continue
+            try:
+                items = simkl_request(
+                    "GET",
+                    f"/users/{username}/lists/{slug}/items",
+                    headers,
+                ).json()
+            except Exception as exc:
+                logger.error("Failed to fetch Simkl list %s items: %s", slug, exc)
+                continue
+            simkl_guids = set()
+            for it in items:
+                data = it.get(it["type"], {})
+                ids = data.get("ids", {})
+                if ids.get("imdb"):
+                    simkl_guids.add(f"imdb://{ids['imdb']}")
+                elif ids.get("tmdb"):
+                    simkl_guids.add(f"tmdb://{ids['tmdb']}")
+            movies = []
+            shows = []
+            for item in coll.items():
+                guid = imdb_guid(item)
+                if not guid or guid in simkl_guids:
+                    continue
+                if item.type == "movie":
+                    movies.append({"ids": guid_to_ids(guid)})
+                elif item.type == "show":
+                    shows.append({"ids": guid_to_ids(guid)})
+            payload = {}
+            if movies:
+                payload["movies"] = movies
+            if shows:
+                payload["shows"] = shows
+            if payload:
+                try:
+                    simkl_request(
+                        "POST",
+                        f"/users/{username}/lists/{slug}/items",
+                        headers,
+                        json=payload,
+                    )
+                    logger.info(
+                        "Updated Simkl list %s with %d items",
+                        slug,
+                        len(movies) + len(shows),
+                    )
+                except Exception as exc:
+                    logger.error("Failed updating Simkl list %s: %s", slug, exc)
+
+
 # --------------------------------------------------------------------------- #
 # SCHEDULER TASK
 # --------------------------------------------------------------------------- #
@@ -1327,6 +1443,11 @@ def sync():
             logger.error("Collection sync skipped: %s", exc)
         except Exception as exc:  # noqa: BLE001
             logger.error("Collection sync failed: %s", exc)
+    if SYNC_COLLECTION and simkl_enabled:
+        try:
+            sync_simkl_library(plex, simkl_headers)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Simkl library sync failed: %s", exc)
     if SYNC_RATINGS and trakt_enabled:
         try:
             sync_ratings(plex, headers)
@@ -1443,6 +1564,11 @@ def sync():
             logger.error("Liked-lists sync skipped: %s", exc)
         except Exception as exc:  # noqa: BLE001
             logger.error("Liked-lists sync failed: %s", exc)
+    if SYNC_LIKED_LISTS and simkl_enabled:
+        try:
+            sync_collections_to_simkl(plex, simkl_headers)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Simkl lists sync failed: %s", exc)
     if SYNC_WATCHLISTS and trakt_enabled:
         try:
             sync_watchlist(

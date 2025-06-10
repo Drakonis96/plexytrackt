@@ -42,6 +42,29 @@
                 {% endif %}
                 <a href="{{ url_for('authorize_service', service='simkl') }}" class="button primary" style="margin-top:10px;">Configure</a>
             </section>
+
+            <section class="card">
+                <h2>Select Provider</h2>
+                <form method="post" class="provider-form">
+                    <div class="provider-toggle">
+                        <label>
+                            <input type="radio" name="provider" value="trakt" {% if provider == 'trakt' %}checked{% endif %}>
+                            Trakt
+                        </label>
+                        <label>
+                            <input type="radio" name="provider" value="none" {% if provider == 'none' %}checked{% endif %}>
+                            None
+                        </label>
+                        <label>
+                            <input type="radio" name="provider" value="simkl" {% if provider == 'simkl' %}checked{% endif %}>
+                            Simkl
+                        </label>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="button primary">Save</button>
+                    </div>
+                </form>
+            </section>
         </main>
 
         <footer class="app-footer">

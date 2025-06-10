@@ -2131,6 +2131,7 @@ def stop_scheduler():
 if __name__ == "__main__":
     logger.info("Starting PlexyTrackt application")
     load_trakt_tokens()
+    load_simkl_tokens()
     load_provider()
     start_scheduler()
     app.run(host="0.0.0.0", port=5030)

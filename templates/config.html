@@ -31,6 +31,9 @@
                 <div class="status-message error">Trakt not configured</div>
                 {% endif %}
                 <a href="{{ url_for('authorize_service', service='trakt') }}" class="button primary" style="margin-top:10px;">Configure</a>
+                <form method="post" action="{{ url_for('clear_service', service='trakt') }}" class="stop-form">
+                    <button type="submit" class="button secondary">Clear Config</button>
+                </form>
             </section>
 
             <section class="card">
@@ -41,6 +44,9 @@
                 <div class="status-message error">Simkl not configured</div>
                 {% endif %}
                 <a href="{{ url_for('authorize_service', service='simkl') }}" class="button primary" style="margin-top:10px;">Configure</a>
+                <form method="post" action="{{ url_for('clear_service', service='simkl') }}" class="stop-form">
+                    <button type="submit" class="button secondary">Clear Config</button>
+                </form>
             </section>
 
             <section class="card">

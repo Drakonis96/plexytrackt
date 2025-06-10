@@ -35,6 +35,7 @@ interface will guide you through authorizing the app and will store the tokens
 for you.
 
 Authorization codes will appear in the **OAuth** tab and can then be entered from the **Config.** tab, which shows whether each service is already configured.
+If you want to remove saved tokens, the Config page also provides **Clear Config** buttons for both Trakt and Simkl.
 
 
 When specifying a custom redirect URI for either service, ensure the same

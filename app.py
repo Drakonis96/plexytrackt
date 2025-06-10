@@ -705,6 +705,8 @@ def get_simkl_history(
             guid = f"imdb://{ids['imdb']}"
         elif ids.get("tmdb"):
             guid = f"tmdb://{ids['tmdb']}"
+        elif ids.get("tvdb"):
+            guid = f"tvdb://{ids['tvdb']}"
         if guid and guid not in movies:
             movies[guid] = (m.get("title", ""), normalize_year(m.get("year")))
 
@@ -719,6 +721,8 @@ def get_simkl_history(
                     guid = f"imdb://{ids['imdb']}"
                 elif ids.get("tmdb"):
                     guid = f"tmdb://{ids['tmdb']}"
+                elif ids.get("tvdb"):
+                    guid = f"tvdb://{ids['tvdb']}"
                 if guid and guid not in episodes:
                     episodes[guid] = (
                         title,

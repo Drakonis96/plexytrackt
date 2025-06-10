@@ -283,18 +283,17 @@ def save_trakt_tokens(access_token: str, refresh_token: Optional[str]) -> None:
 def exchange_code_for_tokens(code: str) -> Optional[dict]:
     client_id = os.environ.get("TRAKT_CLIENT_ID")
     client_secret = os.environ.get("TRAKT_CLIENT_SECRET")
-    if not all([code, client_id]):
-        logger.error("Missing code or Trakt client ID.")
+    if not all([code, client_id, client_secret]):
+        logger.error("Missing code or Trakt client credentials.")
         return None
 
     payload = {
         "code": code,
         "client_id": client_id,
+        "client_secret": client_secret,
         "redirect_uri": TRAKT_REDIRECT_URI,
         "grant_type": "authorization_code",
     }
-    if client_secret:
-        payload["client_secret"] = client_secret
     try:
         resp = requests.post(
             "https://api.trakt.tv/oauth/token", json=payload, timeout=30
@@ -316,18 +315,17 @@ def refresh_trakt_token() -> Optional[str]:
     refresh_token = os.environ.get("TRAKT_REFRESH_TOKEN")
     client_id = os.environ.get("TRAKT_CLIENT_ID")
     client_secret = os.environ.get("TRAKT_CLIENT_SECRET")
-    if not all([refresh_token, client_id]):
-        logger.error("Missing Trakt refresh token or client ID.")
+    if not all([refresh_token, client_id, client_secret]):
+        logger.error("Missing Trakt OAuth environment variables.")
         return None
 
     payload = {
         "refresh_token": refresh_token,
         "client_id": client_id,
+        "client_secret": client_secret,
         "redirect_uri": TRAKT_REDIRECT_URI,
         "grant_type": "refresh_token",
     }
-    if client_secret:
-        payload["client_secret"] = client_secret
     try:
         resp = requests.post(
             "https://api.trakt.tv/oauth/token", json=payload, timeout=30
@@ -370,18 +368,17 @@ def save_simkl_token(access_token: str) -> None:
 def exchange_code_for_simkl_tokens(code: str) -> Optional[dict]:
     client_id = os.environ.get("SIMKL_CLIENT_ID")
     client_secret = os.environ.get("SIMKL_CLIENT_SECRET")
-    if not all([code, client_id]):
-        logger.error("Missing code or Simkl client ID.")
+    if not all([code, client_id, client_secret]):
+        logger.error("Missing code or Simkl client credentials.")
         return None
 
     payload = {
         "code": code,
         "client_id": client_id,
+        "client_secret": client_secret,
         "redirect_uri": SIMKL_REDIRECT_URI,
         "grant_type": "authorization_code",
     }
-    if client_secret:
-        payload["client_secret"] = client_secret
     try:
         resp = requests.post(
             "https://api.simkl.com/oauth/token", json=payload, timeout=30

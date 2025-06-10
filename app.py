@@ -204,7 +204,7 @@ def best_guid(item) -> Optional[str]:
 
 
 def imdb_guid(item) -> Optional[str]:
-    """Return the IMDb GUID for a Plex item if available, otherwise TMDb."""
+    """Return an IMDb, TMDb or TVDb GUID for a Plex item."""
     try:
         for g in getattr(item, "guids", []) or []:
             val = _parse_guid_value(g.id)
@@ -214,11 +214,17 @@ def imdb_guid(item) -> Optional[str]:
             val = _parse_guid_value(g.id)
             if val and val.startswith("tmdb://"):
                 return val
+        for g in getattr(item, "guids", []) or []:
+            val = _parse_guid_value(g.id)
+            if val and val.startswith("tvdb://"):
+                return val
         if getattr(item, "guid", None):
             val = _parse_guid_value(item.guid)
             if val and val.startswith("imdb://"):
                 return val
             if val and val.startswith("tmdb://"):
+                return val
+            if val and val.startswith("tvdb://"):
                 return val
     except Exception as exc:
         logger.debug("Failed retrieving IMDb GUID: %s", exc)
@@ -275,6 +281,11 @@ def guid_to_ids(guid: str) -> Dict[str, Union[str, int]]:
     if guid.startswith("tvdb://"):
         return {"tvdb": int(guid.split("tvdb://", 1)[1])}
     return {}
+
+
+def valid_guid(guid: Optional[str]) -> bool:
+    """Return True if ``guid`` is a valid IMDb, TMDb or TVDb identifier."""
+    return bool(guid) and guid.startswith(("imdb://", "tmdb://", "tvdb://"))
 
 
 def trakt_movie_key(m: dict) -> Union[str, Tuple[str, Optional[int]]]:
@@ -677,7 +688,9 @@ def update_trakt(
         if year is not None:
             movie_obj["year"] = year
         if guid:
-            movie_obj["ids"] = guid_to_ids(guid)
+            movie_ids = guid_to_ids(guid)
+            if movie_ids:
+                movie_obj["ids"] = movie_ids
         if watched_at:
             movie_obj["watched_at"] = watched_at
         payload["movies"].append(movie_obj)
@@ -795,7 +808,9 @@ def update_simkl(
         if year is not None:
             movie_obj["year"] = year
         if guid:
-            movie_obj["ids"] = guid_to_ids(guid)
+            movie_ids = guid_to_ids(guid)
+            if movie_ids:
+                movie_obj["ids"] = movie_ids
         if watched_at:
             movie_obj["watched_at"] = watched_at
         payload["movies"].append(movie_obj)
@@ -804,7 +819,9 @@ def update_simkl(
         if year is not None:
             list_movie["year"] = year
         if guid:
-            list_movie["ids"] = guid_to_ids(guid)
+            list_ids = guid_to_ids(guid)
+            if list_ids:
+                list_movie["ids"] = list_ids
         if watched_at:
             list_movie["watched_at"] = watched_at
         list_movies.append(list_movie)
@@ -814,7 +831,9 @@ def update_simkl(
         number = int(code[4:6])
         ep_obj = {"season": season, "number": number}
         if guid:
-            ep_obj["ids"] = guid_to_ids(guid)
+            ep_ids = guid_to_ids(guid)
+            if ep_ids:
+                ep_obj["ids"] = ep_ids
         else:
             show_obj = get_show_from_library(plex, show)
             show_ids = guid_to_ids(best_guid(show_obj)) if show_obj else {}
@@ -835,7 +854,9 @@ def update_simkl(
             if show_obj and getattr(show_obj, "year", None):
                 show_payload["year"] = normalize_year(show_obj.year)
             if show_guid:
-                show_payload["ids"] = guid_to_ids(show_guid)
+                show_ids_payload = guid_to_ids(show_guid)
+                if show_ids_payload:
+                    show_payload["ids"] = show_ids_payload
             if watched_at:
                 show_payload["watched_at"] = watched_at
             list_shows[key] = show_payload

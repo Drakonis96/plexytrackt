@@ -1209,15 +1209,12 @@ def sync():
     plex_token = os.environ.get("PLEX_TOKEN")
     trakt_token = os.environ.get("TRAKT_ACCESS_TOKEN")
     trakt_client_id = os.environ.get("TRAKT_CLIENT_ID")
-    simkl_enabled = os.environ.get("SIMKL_SYNC_ACTIVATED", "false").lower() == "true"
     simkl_token = os.environ.get("SIMKL_ACCESS_TOKEN")
     simkl_client_id = os.environ.get("SIMKL_CLIENT_ID")
+    simkl_enabled = bool(simkl_token and simkl_client_id)
 
     if not all([plex_baseurl, plex_token, trakt_token, trakt_client_id]):
         logger.error("Missing environment variables for Plex or Trakt.")
-        return
-    if simkl_enabled and not all([simkl_token, simkl_client_id]):
-        logger.error("Simkl sync enabled but SIMKL credentials are missing.")
         return
 
     plex = PlexServer(plex_baseurl, plex_token)
@@ -1521,42 +1518,6 @@ def index():
 
     load_trakt_tokens()
     load_simkl_tokens()
-    simkl_enabled = os.environ.get("SIMKL_SYNC_ACTIVATED", "false").lower() == "true"
-
-    # 1) Initial authorization
-    if not os.environ.get("TRAKT_ACCESS_TOKEN") or not os.environ.get(
-        "TRAKT_REFRESH_TOKEN"
-    ):
-        prefill = request.args.get("code", "").strip()
-        if request.method == "POST":
-            code = request.form.get("code", "").strip()
-            if code and exchange_code_for_tokens(code):
-                start_scheduler()
-                return redirect(url_for("index"))
-        auth_url = (
-            "https://trakt.tv/oauth/authorize"
-            f"?response_type=code&client_id={os.environ.get('TRAKT_CLIENT_ID')}"
-            f"&redirect_uri={TRAKT_REDIRECT_URI}"
-        )
-        return render_template(
-            "authorize.html", auth_url=auth_url, service="Trakt", code=prefill
-        )
-
-    if simkl_enabled and not os.environ.get("SIMKL_ACCESS_TOKEN"):
-        prefill = request.args.get("code", "").strip()
-        if request.method == "POST":
-            code = request.form.get("code", "").strip()
-            if code and exchange_code_for_simkl_tokens(code):
-                start_scheduler()
-                return redirect(url_for("index"))
-        auth_url = (
-            "https://simkl.com/oauth/authorize"
-            f"?response_type=code&client_id={os.environ.get('SIMKL_CLIENT_ID')}"
-            f"&redirect_uri={SIMKL_REDIRECT_URI}"
-        )
-        return render_template(
-            "authorize.html", auth_url=auth_url, service="Simkl", code=prefill
-        )
 
     # 2) Change interval
     if request.method == "POST":
@@ -1605,13 +1566,64 @@ def index():
 @app.route("/trakt")
 def trakt_callback():
     code = request.args.get("code", "")
-    return redirect(url_for("index", code=code))
+    return redirect(url_for("authorize_service", service="trakt", code=code))
 
 
 @app.route("/simkl")
 def simkl_callback():
     code = request.args.get("code", "")
-    return redirect(url_for("index", code=code))
+    return redirect(url_for("authorize_service", service="simkl", code=code))
+
+
+@app.route("/config")
+def config_page():
+    """Display configuration status for Trakt and Simkl."""
+    load_trakt_tokens()
+    load_simkl_tokens()
+    trakt_configured = bool(os.environ.get("TRAKT_ACCESS_TOKEN"))
+    simkl_configured = bool(os.environ.get("SIMKL_ACCESS_TOKEN"))
+    return render_template(
+        "config.html",
+        trakt_configured=trakt_configured,
+        simkl_configured=simkl_configured,
+    )
+
+
+@app.route("/authorize/<service>", methods=["GET", "POST"])
+def authorize_service(service: str):
+    """Handle authorization for Trakt or Simkl."""
+    service = service.lower()
+    prefill = request.args.get("code", "").strip()
+    if request.method == "POST":
+        code = request.form.get("code", "").strip()
+        if service == "trakt" and code and exchange_code_for_tokens(code):
+            start_scheduler()
+            return redirect(url_for("config_page"))
+        if service == "simkl" and code and exchange_code_for_simkl_tokens(code):
+            start_scheduler()
+            return redirect(url_for("config_page"))
+
+    if service == "trakt":
+        auth_url = (
+            "https://trakt.tv/oauth/authorize"
+            f"?response_type=code&client_id={os.environ.get('TRAKT_CLIENT_ID')}"
+            f"&redirect_uri={TRAKT_REDIRECT_URI}"
+        )
+    elif service == "simkl":
+        auth_url = (
+            "https://simkl.com/oauth/authorize"
+            f"?response_type=code&client_id={os.environ.get('SIMKL_CLIENT_ID')}"
+            f"&redirect_uri={SIMKL_REDIRECT_URI}"
+        )
+    else:
+        return redirect(url_for("config_page"))
+
+    return render_template(
+        "authorize.html",
+        auth_url=auth_url,
+        service=service.capitalize(),
+        code=prefill,
+    )
 
 
 @app.route("/stop", methods=["POST"])
@@ -1706,15 +1718,12 @@ def test_connections() -> bool:
     plex_token = os.environ.get("PLEX_TOKEN")
     trakt_token = os.environ.get("TRAKT_ACCESS_TOKEN")
     trakt_client_id = os.environ.get("TRAKT_CLIENT_ID")
-    simkl_enabled = os.environ.get("SIMKL_SYNC_ACTIVATED", "false").lower() == "true"
     simkl_token = os.environ.get("SIMKL_ACCESS_TOKEN")
     simkl_client_id = os.environ.get("SIMKL_CLIENT_ID")
+    simkl_enabled = bool(simkl_token and simkl_client_id)
 
     if not all([plex_baseurl, plex_token, trakt_token, trakt_client_id]):
         logger.error("Missing environment variables for Plex or Trakt.")
-        return False
-    if simkl_enabled and not all([simkl_token, simkl_client_id]):
-        logger.error("Simkl sync enabled but SIMKL credentials are missing.")
         return False
 
     try:

@@ -20,7 +20,6 @@ The application expects the following API credentials:
 - `TRAKT_CLIENT_SECRET` – client secret from your Trakt application.
 - `SIMKL_CLIENT_ID` – client ID for your Simkl application (optional).
 - `SIMKL_CLIENT_SECRET` – client secret for your Simkl application (optional).
-- `SIMKL_SYNC_ACTIVATED` – set to `true` to enable Simkl synchronization.
 - `TRAKT_REDIRECT_URI` – OAuth redirect URI for Trakt (defaults to
   `urn:ietf:wg:oauth:2.0:oob`).
 - `SIMKL_REDIRECT_URI` – OAuth redirect URI for Simkl (defaults to
@@ -31,8 +30,8 @@ You do **not** need to provide a Trakt access token or refresh token. The web
 interface will guide you through authorizing the app and will store the tokens
 for you.
 
-If `SIMKL_SYNC_ACTIVATED` is set to `true`, the application will prompt for
-authorization with Simkl right after authorizing Trakt.
+All authorization codes can be entered from the **Config.** tab, which shows whether each service is already configured.
+
 
 When specifying a custom redirect URI for either service, make sure the same
 value is configured in the corresponding Trakt or Simkl application
@@ -72,7 +71,7 @@ the application will trigger an immediate sync whenever an event is received.
 1. Log in to your Trakt account and open <https://trakt.tv/oauth/applications>.
 2. Create a new application. Any name will work and you can use `urn:ietf:wg:oauth:2.0:oob` as the redirect URL. If you want the authorization code to be filled automatically, set the redirect URL to something like `http://localhost:5000/trakt` and use the same value in the `TRAKT_REDIRECT_URI` environment variable.
 3. After saving the app you will see a **Client ID** and **Client Secret**. Keep them handy.
-4. Start PlexyTrack and open `http://localhost:5000` in your browser. The page will provide a link to authorize the application on Trakt. After authorizing, paste the code shown by Trakt into the form. The app will handle exchanging the code for tokens automatically.
+4. Start PlexyTrack and open `http://localhost:5000` in your browser. From the **Config.** tab you can authorize PlexyTrack on Trakt. After authorizing, paste the code shown by Trakt into the form. The app will handle exchanging the code for tokens automatically.
 
 
 ## Running with Docker Compose
@@ -87,7 +86,6 @@ TRAKT_CLIENT_ID=YOUR_TRAKT_CLIENT_ID
 TRAKT_CLIENT_SECRET=YOUR_TRAKT_CLIENT_SECRET
 SIMKL_CLIENT_ID=YOUR_SIMKL_CLIENT_ID
 SIMKL_CLIENT_SECRET=YOUR_SIMKL_CLIENT_SECRET
-SIMKL_SYNC_ACTIVATED=false
 TRAKT_REDIRECT_URI=urn:ietf:wg:oauth:2.0:oob
 SIMKL_REDIRECT_URI=urn:ietf:wg:oauth:2.0:oob
 TZ=Europe/Madrid

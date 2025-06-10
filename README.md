@@ -20,10 +20,11 @@ The application expects the following API credentials:
 - `TRAKT_CLIENT_SECRET` – client secret from your Trakt application (optional if only using Simkl).
 - `SIMKL_CLIENT_ID` – client ID for your Simkl application (optional if only using Trakt).
 - `SIMKL_CLIENT_SECRET` – client secret for your Simkl application (optional if only using Trakt).
-- `TRAKT_REDIRECT_URI` – OAuth redirect URI for Trakt (defaults to
-  `http://localhost:5030/oauth/trakt`).
-- `SIMKL_REDIRECT_URI` – OAuth redirect URI for Simkl (defaults to
-  `http://localhost:5030/oauth/simkl`).
+- `TRAKT_REDIRECT_URI` – optional custom OAuth redirect URI for Trakt. If not
+  set, the application uses the address from which the UI is accessed (for
+  example, `http://localhost:5030/oauth/trakt`).
+- `SIMKL_REDIRECT_URI` – optional custom OAuth redirect URI for Simkl. When
+  unset, the address of the current UI is used automatically.
 - `TZ` – timezone for log timestamps, defaults to `Europe/Madrid`.
 
 You must set the Plex variables above and at least one pair of Trakt or Simkl
@@ -36,10 +37,9 @@ for you.
 Authorization codes will appear in the **OAuth** tab and can then be entered from the **Config.** tab, which shows whether each service is already configured.
 
 
-When specifying a custom redirect URI for either service, make sure the same
-value is configured in the corresponding Trakt or Simkl application
-settings and in the environment variables `TRAKT_REDIRECT_URI` and
-`SIMKL_REDIRECT_URI`.
+When specifying a custom redirect URI for either service, ensure the same
+value is configured in your Trakt or Simkl application and passed via the
+`TRAKT_REDIRECT_URI` or `SIMKL_REDIRECT_URI` environment variables.
 
 The application uses `plexapi` version 4.15 or newer (but below 5).
 
@@ -72,7 +72,7 @@ the application will trigger an immediate sync whenever an event is received.
 ## Getting Trakt API credentials
 
 1. Log in to your Trakt account and open <https://trakt.tv/oauth/applications>.
-2. Create a new application. Any name will work and you can use `urn:ietf:wg:oauth:2.0:oob` as the redirect URL. If you want the authorization code to be filled automatically, set the redirect URL to something like `http://localhost:5030/oauth/trakt` and use the same value in the `TRAKT_REDIRECT_URI` environment variable.
+2. Create a new application. Any name will work and you can use `urn:ietf:wg:oauth:2.0:oob` as the redirect URL. If you want the authorization code to be filled automatically, set the redirect URL to something like `http://localhost:5030/oauth/trakt` and configure the same value if you provide a `TRAKT_REDIRECT_URI` environment variable.
 3. After saving the app you will see a **Client ID** and **Client Secret**. Keep them handy.
 4. Start PlexyTrack and open `http://localhost:5030` in your browser. From the **Config.** tab you can authorize PlexyTrack on Trakt. After authorizing, Trakt will redirect you to the **OAuth** tab where the code will appear automatically.
 
@@ -89,8 +89,9 @@ TRAKT_CLIENT_ID=YOUR_TRAKT_CLIENT_ID
 TRAKT_CLIENT_SECRET=YOUR_TRAKT_CLIENT_SECRET
 SIMKL_CLIENT_ID=YOUR_SIMKL_CLIENT_ID
 SIMKL_CLIENT_SECRET=YOUR_SIMKL_CLIENT_SECRET
-TRAKT_REDIRECT_URI=http://localhost:5030/oauth/trakt
-SIMKL_REDIRECT_URI=http://localhost:5030/oauth/simkl
+# Optional custom redirect URIs
+# TRAKT_REDIRECT_URI=http://localhost:5030/oauth/trakt
+# SIMKL_REDIRECT_URI=http://localhost:5030/oauth/simkl
 TZ=Europe/Madrid
 ```
 

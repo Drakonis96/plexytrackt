@@ -17,7 +17,14 @@ from typing import Dict, List, Optional, Set, Tuple, Union
 import time
 
 import requests
-from flask import Flask, render_template, request, redirect, url_for
+from flask import (
+    Flask,
+    render_template,
+    request,
+    redirect,
+    url_for,
+    has_request_context,
+)
 from flask import send_file
 from apscheduler.schedulers.background import BackgroundScheduler
 from plexapi.server import PlexServer
@@ -50,14 +57,10 @@ plex = None  # will hold PlexServer instance
 # --------------------------------------------------------------------------- #
 # TRAKT / SIMKL OAUTH CONSTANTS
 # --------------------------------------------------------------------------- #
-TRAKT_REDIRECT_URI = os.environ.get(
-    "TRAKT_REDIRECT_URI", "urn:ietf:wg:oauth:2.0:oob"
-)
+TRAKT_REDIRECT_URI = os.environ.get("TRAKT_REDIRECT_URI")
 TOKEN_FILE = "trakt_tokens.json"
 
-SIMKL_REDIRECT_URI = os.environ.get(
-    "SIMKL_REDIRECT_URI", "urn:ietf:wg:oauth:2.0:oob"
-)
+SIMKL_REDIRECT_URI = os.environ.get("SIMKL_REDIRECT_URI")
 SIMKL_TOKEN_FILE = "simkl_tokens.json"
 
 
@@ -68,6 +71,28 @@ class TraktAccountLimitError(Exception):
     """Raised when Trakt returns HTTP 420 (account limit exceeded)."""
 
     pass
+
+
+def get_trakt_redirect_uri() -> str:
+    """Return the Trakt redirect URI derived from the current request."""
+    global TRAKT_REDIRECT_URI
+    if TRAKT_REDIRECT_URI:
+        return TRAKT_REDIRECT_URI
+    if has_request_context():
+        TRAKT_REDIRECT_URI = request.url_root.rstrip("/") + "/oauth/trakt"
+        return TRAKT_REDIRECT_URI
+    return "http://localhost:5030/oauth/trakt"
+
+
+def get_simkl_redirect_uri() -> str:
+    """Return the Simkl redirect URI derived from the current request."""
+    global SIMKL_REDIRECT_URI
+    if SIMKL_REDIRECT_URI:
+        return SIMKL_REDIRECT_URI
+    if has_request_context():
+        SIMKL_REDIRECT_URI = request.url_root.rstrip("/") + "/oauth/simkl"
+        return SIMKL_REDIRECT_URI
+    return "http://localhost:5030/oauth/simkl"
 
 
 # --------------------------------------------------------------------------- #
@@ -295,7 +320,7 @@ def exchange_code_for_tokens(code: str) -> Optional[dict]:
         "code": code,
         "client_id": client_id,
         "client_secret": client_secret,
-        "redirect_uri": TRAKT_REDIRECT_URI,
+        "redirect_uri": get_trakt_redirect_uri(),
         "grant_type": "authorization_code",
     }
     try:
@@ -327,7 +352,7 @@ def refresh_trakt_token() -> Optional[str]:
         "refresh_token": refresh_token,
         "client_id": client_id,
         "client_secret": client_secret,
-        "redirect_uri": TRAKT_REDIRECT_URI,
+        "redirect_uri": get_trakt_redirect_uri(),
         "grant_type": "refresh_token",
     }
     try:
@@ -380,7 +405,7 @@ def exchange_code_for_simkl_tokens(code: str) -> Optional[dict]:
         "code": code,
         "client_id": client_id,
         "client_secret": client_secret,
-        "redirect_uri": SIMKL_REDIRECT_URI,
+        "redirect_uri": get_simkl_redirect_uri(),
         "grant_type": "authorization_code",
     }
     try:
@@ -1641,13 +1666,13 @@ def authorize_service(service: str):
         auth_url = (
             "https://trakt.tv/oauth/authorize"
             f"?response_type=code&client_id={os.environ.get('TRAKT_CLIENT_ID')}"
-            f"&redirect_uri={TRAKT_REDIRECT_URI}"
+            f"&redirect_uri={get_trakt_redirect_uri()}"
         )
     elif service == "simkl":
         auth_url = (
             "https://simkl.com/oauth/authorize"
             f"?response_type=code&client_id={os.environ.get('SIMKL_CLIENT_ID')}"
-            f"&redirect_uri={SIMKL_REDIRECT_URI}"
+            f"&redirect_uri={get_simkl_redirect_uri()}"
         )
     else:
         return redirect(url_for("config_page"))

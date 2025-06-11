@@ -179,12 +179,14 @@ def normalize_year(value: Union[str, int, None]) -> Optional[int]:
 
 
 def _parse_guid_value(raw: str) -> Optional[str]:
-    """Convert a raw Plex GUID string to a known imdb/tmdb/tvdb prefix."""
+    """Convert a raw Plex GUID string to a known imdb/tmdb/tvdb/anidb prefix."""
     if raw.startswith("imdb://"):
         return raw.split("?", 1)[0]
     if raw.startswith("tmdb://"):
         return raw.split("?", 1)[0]
     if raw.startswith("tvdb://"):
+        return raw.split("?", 1)[0]
+    if raw.startswith("anidb://"):
         return raw.split("?", 1)[0]
     if "themoviedb://" in raw:
         val = raw.split("themoviedb://", 1)[1].split("?", 1)[0]
@@ -217,7 +219,7 @@ def best_guid(item) -> Optional[str]:
 
 
 def imdb_guid(item) -> Optional[str]:
-    """Return an IMDb, TMDb or TVDb GUID for a Plex item."""
+    """Return an IMDb, TMDb, TVDb or AniDB GUID for a Plex item."""
     try:
         for g in getattr(item, "guids", []) or []:
             val = _parse_guid_value(g.id)
@@ -231,6 +233,10 @@ def imdb_guid(item) -> Optional[str]:
             val = _parse_guid_value(g.id)
             if val and val.startswith("tvdb://"):
                 return val
+        for g in getattr(item, "guids", []) or []:
+            val = _parse_guid_value(g.id)
+            if val and val.startswith("anidb://"):
+                return val
         if getattr(item, "guid", None):
             val = _parse_guid_value(item.guid)
             if val and val.startswith("imdb://"):
@@ -238,6 +244,8 @@ def imdb_guid(item) -> Optional[str]:
             if val and val.startswith("tmdb://"):
                 return val
             if val and val.startswith("tvdb://"):
+                return val
+            if val and val.startswith("anidb://"):
                 return val
     except Exception as exc:
         logger.debug("Failed retrieving IMDb GUID: %s", exc)
@@ -249,8 +257,16 @@ def get_show_from_library(plex, title):
     for sec in plex.library.sections():
         if sec.type == "show":
             try:
+                # Intento 1: coincidencia exacta (rápido)
                 return sec.get(title)
             except NotFound:
+                # Intento 2: búsqueda flexible
+                try:
+                    results = sec.search(title=title)
+                    if results:
+                        return results[0]
+                except Exception:
+                    pass
                 continue
     return None
 
@@ -293,28 +309,34 @@ def guid_to_ids(guid: str) -> Dict[str, Union[str, int]]:
         return {"tmdb": int(guid.split("tmdb://", 1)[1])}
     if guid.startswith("tvdb://"):
         return {"tvdb": int(guid.split("tvdb://", 1)[1])}
+    if guid.startswith("anidb://"):
+        return {"anidb": int(guid.split("anidb://", 1)[1])}
     return {}
 
 
 def valid_guid(guid: Optional[str]) -> bool:
-    """Return True if ``guid`` is a valid IMDb, TMDb or TVDb identifier."""
-    return bool(guid) and guid.startswith(("imdb://", "tmdb://", "tvdb://"))
+    """Return True if ``guid`` is a valid IMDb, TMDb, TVDb or AniDB identifier."""
+    return bool(guid) and guid.startswith(("imdb://", "tmdb://", "tvdb://", "anidb://"))
 
 
 def trakt_movie_key(m: dict) -> Union[str, Tuple[str, Optional[int]]]:
-    """Return a unique key for a Trakt movie object using IMDb or TMDb."""
+    """Return a unique key for a Trakt movie object using IMDb, TMDb, TVDb o AniDB."""
     ids = m.get("ids", {})
     if ids.get("imdb"):
         return f"imdb://{ids['imdb']}"
     if ids.get("tmdb"):
         return f"tmdb://{ids['tmdb']}"
+    if ids.get("tvdb"):
+        return f"tvdb://{ids['tvdb']}"
+    if ids.get("anidb"):
+        return f"anidb://{ids['anidb']}"
     return m["title"].lower()
 
 
 def episode_key(
     show: str, code: str, guid: Optional[str]
 ) -> Union[str, Tuple[str, str]]:
-    if guid and (guid.startswith("imdb://") or guid.startswith("tmdb://")):
+    if guid and (guid.startswith(("imdb://", "tmdb://", "tvdb://", "anidb://"))):
         return guid
     return (show.lower(), code)
 
@@ -325,22 +347,57 @@ def trakt_episode_key(show: dict, e: dict) -> Union[str, Tuple[str, str]]:
         return f"imdb://{ids['imdb']}"
     if ids.get("tmdb"):
         return f"tmdb://{ids['tmdb']}"
+    if ids.get("tvdb"):
+        return f"tvdb://{ids['tvdb']}"
+    if ids.get("anidb"):
+        return f"anidb://{ids['anidb']}"
     return (
         show["title"].lower(),
         f"S{e['season']:02d}E{e['number']:02d}",
     )
 
 
-def simkl_episode_key(show: dict, e: dict) -> Optional[str]:
-    """Return best GUID for a Simkl episode object."""
-    ids = e.get("ids", {})
+def simkl_episode_key(show: dict, e: dict) -> Optional[Union[str, Tuple[str, str]]]:
+    """Return best key for a Simkl episode object.
+
+    Siempre que exista un identificador único a nivel de episodio (IMDb/TMDb/TVDb/AniDB)
+    se utiliza dicho GUID como clave. Cuando no hay identificadores a nivel de
+    episodio —algo bastante habitual en Simkl— se genera una clave compuesta
+    (GUID_serie, "SxxEyy") para evitar que distintos episodios de una misma
+    serie colisionen entre sí.
+    """
+    ids = e.get("ids", {}) or {}
     if ids.get("imdb"):
         return f"imdb://{ids['imdb']}"
     if ids.get("tmdb"):
         return f"tmdb://{ids['tmdb']}"
     if ids.get("tvdb"):
         return f"tvdb://{ids['tvdb']}"
-    return None
+    if ids.get("anidb"):
+        return f"anidb://{ids['anidb']}"
+
+    # -------------------------- Fallback -------------------------- #
+    # Sin IDs de episodio: combinamos GUID (de la serie) + código epi.
+    show_ids = show.get("ids", {}) or {}
+    base_guid: Optional[str] = None
+    if show_ids.get("imdb"):
+        base_guid = f"imdb://{show_ids['imdb']}"
+    elif show_ids.get("tmdb"):
+        base_guid = f"tmdb://{show_ids['tmdb']}"
+    elif show_ids.get("tvdb"):
+        base_guid = f"tvdb://{show_ids['tvdb']}"
+    elif show_ids.get("anidb"):
+        base_guid = f"anidb://{show_ids['anidb']}"
+
+    # Componer código SxxEyy
+    season_num = e.get("season", 0)
+    episode_num = e.get("number", 0)
+    code = f"S{season_num:02d}E{episode_num:02d}"
+
+    # Si no hay GUID de serie, usamos (titulo, code) como último recurso.
+    if base_guid:
+        return (base_guid, code)
+    return (show.get("title", "").lower(), code)
 
 
 
@@ -522,13 +579,81 @@ def trakt_request(
 
 
 def simkl_request(
-    method: str, endpoint: str, headers: dict, **kwargs
+    method: str,
+    endpoint: str,
+    headers: dict,
+    *,
+    retries: int = 2,
+    timeout: int = 30,
+    **kwargs,
 ) -> requests.Response:
-    """Perform a request against the Simkl API."""
+    """Realiza una petición HTTP a la API de Simkl con reintentos y timeout adaptable.
+
+    • `retries`  – número de reintentos ante ReadTimeout (por defecto 2 → 3 intentos totales).
+    • `timeout`  – timeout inicial en segundos (por defecto 30 s). Cada reintento duplica el timeout.
+    """
+
     url = f"https://api.simkl.com{endpoint}"
-    resp = requests.request(method, url, headers=headers, timeout=30, **kwargs)
-    resp.raise_for_status()
-    return resp
+
+    # Extraer un timeout personalizado si viene en **kwargs** para mantener compatibilidad.
+    if "timeout" in kwargs:
+        timeout = kwargs.pop("timeout")  # se usará como valor inicial
+
+    attempt = 0
+    while True:
+        try:
+            resp = requests.request(method, url, headers=headers, timeout=timeout, **kwargs)
+            resp.raise_for_status()
+            return resp
+        except requests.exceptions.ReadTimeout as exc:
+            if attempt >= retries:
+                logger.error("Simkl ReadTimeout tras %d intentos (%d s).", attempt + 1, timeout)
+                raise
+            attempt += 1
+            timeout *= 2  # back-off exponencial
+            logger.warning(
+                "Simkl request %s %s agotó el tiempo (%s). Reintentando (%d/%d) con timeout=%ds…",
+                method.upper(), endpoint, exc, attempt, retries, timeout,
+            )
+        except requests.exceptions.RequestException:
+            # Para otros errores de red no merece volver a intentar; relanzamos.
+            raise
+
+
+def simkl_search_ids(
+    headers: dict,
+    title: str,
+    *,
+    is_movie: bool = True,
+    year: Optional[int] = None,
+) -> Dict[str, Union[str, int]]:
+    """Buscar en Simkl por *title* y devolver un mapping de IDs.
+
+    Si no se encuentra un resultado claro se devuelve un dict vacío.
+    """
+    endpoint = "/search/movies" if is_movie else "/search/shows"
+    params = {"q": title, "limit": 1}
+    # Algunos endpoints aceptan el parámetro `year` únicamente para películas.
+    if year and is_movie:
+        params["year"] = year
+    try:
+        resp = simkl_request("GET", endpoint, headers, params=params)
+        data = resp.json()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Simkl search failed for '%s': %s", title, exc)
+        return {}
+
+    if not isinstance(data, list) or not data:
+        return {}
+
+    ids = data[0].get("ids", {}) or {}
+    # Normalizar integer IDs
+    for k, v in list(ids.items()):
+        try:
+            ids[k] = int(v) if str(v).isdigit() else v
+        except Exception:
+            pass
+    return ids
 
 
 def simkl_movie_key(m: dict) -> Optional[str]:
@@ -540,6 +665,8 @@ def simkl_movie_key(m: dict) -> Optional[str]:
         return f"tmdb://{ids['tmdb']}"
     if ids.get("tvdb"):
         return f"tvdb://{ids['tvdb']}"
+    if ids.get("anidb"):
+        return f"anidb://{ids['anidb']}"
     return None
 
 
@@ -613,11 +740,12 @@ def get_simkl_history(
         page += 1
     
     # Then, get movies from sync/all-items to include completed movies
-    logger.info("Fetching Simkl completed movies…")
+    logger.info("Fetching Simkl all-items (full)…")
     resp = simkl_request(
         "GET",
         "/sync/all-items",
         headers,
+        params={"extended": "full", "episode_watched_at": "yes"},
     )
     data = resp.json()
     if data and isinstance(data, dict):
@@ -645,24 +773,37 @@ def get_simkl_history(
                 season_num = season.get("number", 0)
                 season_episodes = season.get("episodes", [])
                 for episode in season_episodes:
-                    # Only include episodes that have been watched
-                    if episode.get("watched_at"):
-                        episode_num = episode.get("number", 0)
-                        # Create episode object for simkl_episode_key
-                        e = {
-                            "season": season_num,
-                            "number": episode_num,
-                            "ids": episode.get("ids", {})
-                        }
-                        guid = simkl_episode_key(show, e)
-                        if not guid:
-                            continue
-                        if guid not in episodes:
-                            episodes[guid] = (
-                                show.get("title"),
-                                f"S{season_num:02d}E{episode_num:02d}",
-                                episode.get("watched_at"),
-                            )
+                    # Determinar si el episodio está visto:
+                    # 1. Si viene `watched_at`, asumimos visto.
+                    # 2. Si no, usamos la métrica `plays` (reproducido ≥1).
+                    # 3. Si tampoco hay `plays`, comprobamos `watched` (bool).
+                    if not (
+                        episode.get("watched_at")
+                        or episode.get("plays", 0) > 0
+                        or episode.get("watched")
+                    ):
+                        # No hay indicios de reproducción → saltar
+                        continue
+
+                    episode_num = episode.get("number", 0)
+
+                    # Crear un objeto "episode" compatible con simkl_episode_key
+                    e = {
+                        "season": season_num,
+                        "number": episode_num,
+                        "ids": episode.get("ids", {}),
+                    }
+
+                    guid = simkl_episode_key(show, e)
+                    if not guid:
+                        continue
+
+                    if guid not in episodes:
+                        episodes[guid] = (
+                            show.get("title"),
+                            f"S{season_num:02d}E{episode_num:02d}",
+                            episode.get("watched_at"),
+                        )
     
     return movies, episodes
 
@@ -670,28 +811,97 @@ def get_simkl_history(
 def update_simkl(
     headers: dict,
     movies: List[Tuple[str, Optional[int], Optional[str], Optional[str]]],
+    episodes: List[Tuple[str, str, Optional[str], Optional[str]]],
 ) -> None:
-    payload = {"movies": []}
+    """Add new items to Simkl history con búsqueda de IDs de respaldo."""
+    payload = {}
+    if movies:
+        payload["movies"] = []
+        for title, year, guid, watched_at in movies:
+            item = {"title": title, "year": normalize_year(year)}
+            ids = guid_to_ids(guid) if guid else {}
+            if not ids:
+                ids = simkl_search_ids(headers, title, is_movie=True, year=year)
+                if ids:
+                    logger.debug("IDs encontrados en Simkl para la película '%s': %s", title, ids)
+            if ids:
+                item["ids"] = ids
+            if watched_at:
+                item["watched_at"] = watched_at
+            payload["movies"].append(item)
 
-    for title, year, watched_at, guid in movies:
-        if not valid_guid(guid):
-            continue
-        movie_obj = {"title": title}
-        if year is not None:
-            movie_obj["year"] = year
-        ids = guid_to_ids(guid)
-        if ids:
-            movie_obj["ids"] = ids
-        if watched_at:
-            movie_obj["watched_at"] = watched_at
-        payload["movies"].append(movie_obj)
+    if episodes:
+        shows: Dict[str, dict] = {}
+        for show_title, code, guid, watched_at in episodes:
+            # Intentar obtener IDs de la serie
+            ids = guid_to_ids(guid) if guid else {}
+            if not ids:
+                ids = simkl_search_ids(headers, show_title, is_movie=False)
+                if ids:
+                    logger.debug("IDs encontrados en Simkl para la serie '%s': %s", show_title, ids)
+            if not ids:
+                logger.warning(
+                    "Omitiendo episodio '%s - %s' (sin IDs encontrados)", show_title, code
+                )
+                continue
 
-    if not payload["movies"]:
-        logger.info("Nothing new to send to Simkl.")
+            key = tuple(sorted(ids.items()))  # clave única para la serie
+            if key not in shows:
+                shows[key] = {
+                    "title": show_title,
+                    "ids": ids,
+                    "seasons": [],
+                }
+
+            try:
+                season_num, episode_num = map(int, code.upper().lstrip("S").split("E"))
+            except ValueError:
+                logger.warning("Formato de episodio inválido: %s", code)
+                continue
+
+            season_found = False
+            for s in shows[key]["seasons"]:
+                if s["number"] == season_num:
+                    s["episodes"].append({"number": episode_num, "watched_at": watched_at})
+                    season_found = True
+                    break
+
+            if not season_found:
+                shows[key]["seasons"].append(
+                    {
+                        "number": season_num,
+                        "episodes": [{"number": episode_num, "watched_at": watched_at}],
+                    }
+                )
+        if shows:
+            payload["shows"] = list(shows.values())
+
+    if not payload:
+        logger.info("No hay ítems nuevos para sincronizar con Simkl")
         return
 
-    simkl_request("POST", "/sync/history", headers, json=payload)
-    logger.info("Sent %d movies to Simkl", len(payload["movies"]))
+    logger.info(
+        "Añadiendo %d películas y %d series al historial de Simkl",
+        len(payload.get("movies", [])),
+        len(payload.get("shows", [])),
+    )
+    try:
+        response = simkl_request(
+            "post", "/sync/history", headers, json=payload
+        )
+        # Simkl puede devolver 429 incluso en éxito, comprobaremos el cuerpo
+        if response.status_code == 429:
+            try:
+                data = response.json()
+                if data.get("message") == "Success!":
+                    logger.info("Simkl devolvió 429 pero informó de éxito.")
+                    return
+            except json.JSONDecodeError:
+                pass  # no es JSON, continuar como error
+        response.raise_for_status()
+        logger.info("Historial de Simkl actualizado correctamente.")
+    except requests.exceptions.RequestException as e:
+        logger.error("Falló la actualización de Simkl: %s", e)
 
 
 # --------------------------------------------------------------------------- #
@@ -704,6 +914,8 @@ def get_plex_history(plex) -> Tuple[
     """Return watched movies and episodes from Plex keyed by IMDb or TMDb GUID."""
     movies: Dict[str, Dict[str, Optional[str]]] = {}
     episodes: Dict[str, Dict[str, Optional[str]]] = {}
+    # Cache para no abrir la biblioteca en cada episodio cuando necesitamos el GUID de la serie
+    show_guid_cache: Dict[str, Optional[str]] = {}
 
     logger.info("Fetching Plex history…")
     for entry in plex.history():
@@ -754,12 +966,53 @@ def get_plex_history(plex) -> Tuple[
             if None in (season, number, show):
                 continue
             code = f"S{int(season):02d}E{int(number):02d}"
-            if guid and guid not in episodes:
-                episodes[guid] = {
+
+            # ------------------- Determinar clave normalizada ------------------- #
+            if guid:
+                key = guid  # GUID a nivel de episodio
+            else:
+                # ------------------------------------------------------------------ #
+                # Intentar obtener un GUID de serie consistente con los proveedores
+                # externos. Se siguen varios pasos en orden de preferencia:
+                #   1) grandparentGuid del propio episodio (si existe)
+                #   2) Caché interna show_guid_cache
+                #   3) Búsqueda flexible en la biblioteca usando get_show_from_library
+                # Si tras estos pasos no conseguimos un GUID válido, caemos al
+                # fallback basado en el título + código de episodio.
+                # ------------------------------------------------------------------ #
+
+                series_guid: Optional[str] = None
+
+                # (1) GUID directo desde el episodio
+                if item is not None:
+                    gp_guid_raw = getattr(item, "grandparentGuid", None)
+                    if gp_guid_raw:
+                        series_guid = _parse_guid_value(gp_guid_raw)
+
+                # (2) consulta a la caché
+                if series_guid is None and show in show_guid_cache:
+                    series_guid = show_guid_cache[show]
+
+                # (3) búsqueda en biblioteca si todavía no tenemos GUID
+                if series_guid is None and show:
+                    series_obj = get_show_from_library(plex, show)
+                    series_guid = imdb_guid(series_obj) if series_obj else None
+                    # Memoizar resultado (aunque sea None) para evitar repetir búsquedas
+                    show_guid_cache[show] = series_guid
+
+                # Composición de la clave normalizada
+                if series_guid and valid_guid(series_guid):
+                    key = (series_guid, code)
+                else:
+                    # Último recurso: título de la serie en minúsculas
+                    key = (show.lower() if show else "", code)
+
+            if key not in episodes:
+                episodes[key] = {
                     "show": show,
                     "code": code,
                     "watched_at": watched_at,
-                    "guid": guid,
+                    "guid": guid,  # puede ser None cuando no hay GUID
                 }
 
     logger.info("Fetching watched flags from Plex library…")
@@ -781,9 +1034,40 @@ def get_plex_history(plex) -> Tuple[
                 for ep in section.searchEpisodes(viewCount__gt=0):
                     code = f"S{int(ep.seasonNumber):02d}E{int(ep.episodeNumber):02d}"
                     guid = imdb_guid(ep)
-                    if guid and guid not in episodes:
-                        episodes[guid] = {
-                            "show": ep.grandparentTitle,
+                    show_title = getattr(ep, "grandparentTitle", None)
+
+                    key: Union[str, Tuple[str, str]]
+                    if guid:
+                        key = guid
+                    else:
+                        series_guid: Optional[str] = None
+
+                        # (1) From episode's grandparentGuid
+                        gp_guid_raw = getattr(ep, "grandparentGuid", None)
+                        if gp_guid_raw:
+                            series_guid = _parse_guid_value(gp_guid_raw)
+
+                        # (2) From cache
+                        if series_guid is None and show_title and show_title in show_guid_cache:
+                            series_guid = show_guid_cache[show_title]
+
+                        # (3) From library search if still no GUID
+                        if series_guid is None and show_title:
+                            series_obj = get_show_from_library(plex, show_title)
+                            series_guid = (
+                                imdb_guid(series_obj) if series_obj else None
+                            )
+                            show_guid_cache[show_title] = series_guid
+
+                        # Key composition
+                        if series_guid and valid_guid(series_guid):
+                            key = (series_guid, code)
+                        else:
+                            key = (show_title.lower() if show_title else "", code)
+
+                    if key not in episodes:
+                        episodes[key] = {
+                            "show": show_title,
                             "code": code,
                             "watched_at": to_iso_z(getattr(ep, "lastViewedAt", None)),
                             "guid": guid,
@@ -912,40 +1196,207 @@ def update_trakt(
     )
 
 
+def update_simkl(
+    headers: dict,
+    movies: List[Tuple[str, Optional[int], Optional[str], Optional[str]]],
+    episodes: List[Tuple[str, str, Optional[str], Optional[str]]],
+) -> None:
+    """Add new items to Simkl history con búsqueda de IDs de respaldo."""
+    payload = {}
+    if movies:
+        payload["movies"] = []
+        for title, year, guid, watched_at in movies:
+            item = {"title": title, "year": normalize_year(year)}
+            ids = guid_to_ids(guid) if guid else {}
+            if not ids:
+                ids = simkl_search_ids(headers, title, is_movie=True, year=year)
+                if ids:
+                    logger.debug("IDs encontrados en Simkl para la película '%s': %s", title, ids)
+            if ids:
+                item["ids"] = ids
+            if watched_at:
+                item["watched_at"] = watched_at
+            payload["movies"].append(item)
+
+    if episodes:
+        shows: Dict[str, dict] = {}
+        for show_title, code, guid, watched_at in episodes:
+            # Intentar obtener IDs de la serie
+            ids = guid_to_ids(guid) if guid else {}
+            if not ids:
+                ids = simkl_search_ids(headers, show_title, is_movie=False)
+                if ids:
+                    logger.debug("IDs encontrados en Simkl para la serie '%s': %s", show_title, ids)
+            if not ids:
+                logger.warning(
+                    "Omitiendo episodio '%s - %s' (sin IDs encontrados)", show_title, code
+                )
+                continue
+
+            key = tuple(sorted(ids.items()))  # clave única para la serie
+            if key not in shows:
+                shows[key] = {
+                    "title": show_title,
+                    "ids": ids,
+                    "seasons": [],
+                }
+
+            try:
+                season_num, episode_num = map(int, code.upper().lstrip("S").split("E"))
+            except ValueError:
+                logger.warning("Formato de episodio inválido: %s", code)
+                continue
+
+            season_found = False
+            for s in shows[key]["seasons"]:
+                if s["number"] == season_num:
+                    s["episodes"].append({"number": episode_num, "watched_at": watched_at})
+                    season_found = True
+                    break
+
+            if not season_found:
+                shows[key]["seasons"].append(
+                    {
+                        "number": season_num,
+                        "episodes": [{"number": episode_num, "watched_at": watched_at}],
+                    }
+                )
+        if shows:
+            payload["shows"] = list(shows.values())
+
+    if not payload:
+        logger.info("No hay ítems nuevos para sincronizar con Simkl")
+        return
+
+    logger.info(
+        "Añadiendo %d películas y %d series al historial de Simkl",
+        len(payload.get("movies", [])),
+        len(payload.get("shows", [])),
+    )
+    try:
+        response = simkl_request(
+            "post", "/sync/history", headers, json=payload
+        )
+        # Simkl puede devolver 429 incluso en éxito, comprobaremos el cuerpo
+        if response.status_code == 429:
+            try:
+                data = response.json()
+                if data.get("message") == "Success!":
+                    logger.info("Simkl devolvió 429 pero informó de éxito.")
+                    return
+            except json.JSONDecodeError:
+                pass  # no es JSON, continuar como error
+        response.raise_for_status()
+        logger.info("Historial de Simkl actualizado correctamente.")
+    except requests.exceptions.RequestException as e:
+        logger.error("Falló la actualización de Simkl: %s", e)
 
 
 def update_plex(
     plex,
     movies: Set[Tuple[str, Optional[int], Optional[str]]],
-    episodes: Set[Tuple[str, str, Optional[str]]],
+    episodes: Set[Tuple[str, str, Optional[Union[str, Tuple[str, str]]]]],
 ) -> None:
-    """Mark items as watched in Plex when they appear in Trakt but not in Plex."""
+    """Mark items as watched in Plex when they appear in Trakt/Simkl but not in Plex."""
     movie_count = 0
     episode_count = 0
 
-    # Movies
+    # ------------------------------ Películas ------------------------------ #
     for title, year, guid in movies:
-        if not valid_guid(guid):
-            continue
-        try:
-            item = plex.fetchItem(guid)
-        except Exception as exc:
-            logger.debug("GUID fetch failed for %s: %s", guid, exc)
-            continue
-        item.markWatched()
-        movie_count += 1
+        # ---------------------------------- Caso 1: marcar por GUID ---------------------------------- #
+        if guid and valid_guid(guid):
+            try:
+                item = plex.fetchItem(guid)
+                if getattr(item, "isWatched", lambda: bool(getattr(item, "viewCount", 0)))():
+                    # Ya marcado
+                    continue
+                item.markWatched()
+                movie_count += 1
+                continue
+            except Exception as exc:
+                logger.debug("GUID fetch failed for %s: %s", guid, exc)
 
-    # Episodes
-    for show, code, guid in episodes:
-        if not valid_guid(guid):
+        # -------------------------------- Caso 2: búsqueda por título/año ----------------------------- #
+        found = None
+        for section in plex.library.sections():
+            if section.type != "movie":
+                continue
+            try:
+                # Filtrar por título (insensible a mayúsculas) y, si se conoce, por año
+                query_kwargs = {"title": title}
+                results = section.search(**query_kwargs)
+                for candidate in results:
+                    if year is None or normalize_year(getattr(candidate, "year", None)) == normalize_year(year):
+                        found = candidate
+                        break
+                if found:
+                    break
+            except Exception as exc:
+                logger.debug("Search failed in section %s: %s", section.title, exc)
+
+        if not found:
+            logger.debug("Movie not found in Plex library: %s (%s)", title, year)
             continue
+
         try:
-            item = plex.fetchItem(guid)
+            if getattr(found, "isWatched", lambda: bool(getattr(found, "viewCount", 0)))():
+                continue  # ya visto
+            found.markWatched()
+            movie_count += 1
         except Exception as exc:
-            logger.debug("GUID fetch failed for %s: %s", guid, exc)
+            logger.debug("Failed to mark movie '%s' as watched: %s", found.title, exc)
+
+    # ------------------------------ Episodios ------------------------------ #
+    for show_title, code, key in episodes:
+        # `key` puede ser:
+        #   • Un GUID válido (str)
+        #   • Una tupla (guid_de_serie, code)
+        #   • Una tupla (show_title.lower(), code) cuando no hay GUID
+        #   • O incluso None (debería ser raro)
+
+        guid: Optional[str] = None
+        if isinstance(key, str):
+            guid = key if valid_guid(key) else None
+        elif isinstance(key, tuple) and key and isinstance(key[0], str):
+            # En la clave compuesta el primer elemento puede ser un GUID de serie
+            guid = key[0] if valid_guid(key[0]) else None
+
+        # Intento 1: marcar por GUID si existe
+        if guid:
+            try:
+                item = plex.fetchItem(guid)
+                if getattr(item, "isWatched", lambda: bool(getattr(item, "viewCount", 0)))():
+                    continue
+                item.markWatched()
+                episode_count += 1
+                continue  # siguiente episodio
+            except Exception as exc:
+                logger.debug("GUID fetch failed for %s: %s", guid, exc)
+                # Continuar con búsqueda por título + código
+
+        # Intento 2: localizar el episodio navegando por la serie
+        try:
+            season_num, episode_num = map(int, code.upper().lstrip("S").split("E"))
+        except ValueError:
+            logger.debug("Invalid episode code format: %s", code)
             continue
-        item.markWatched()
-        episode_count += 1
+
+        show_obj = get_show_from_library(plex, show_title)
+        if not show_obj:
+            logger.debug("Show not found in Plex library: %s", show_title)
+            continue
+
+        try:
+            season_obj = show_obj.season(season_num)
+            ep_obj = season_obj.episode(episode_num)
+            if getattr(ep_obj, "isWatched", lambda: bool(getattr(ep_obj, "viewCount", 0)))():
+                continue
+            ep_obj.markWatched()
+            episode_count += 1
+        except Exception as exc:
+            logger.debug(
+                "Failed marking episode %s - %s as watched: %s", show_title, code, exc
+            )
 
     if movie_count or episode_count:
         logger.info(
@@ -1346,163 +1797,203 @@ def sync_watchlist(plex, headers, plex_history, trakt_history):
 # SCHEDULER TASK
 # --------------------------------------------------------------------------- #
 def sync():
-    global plex
-    logger.info("Starting synchronization job")
-
-    plex_baseurl = os.environ.get("PLEX_BASEURL")
-    plex_token = os.environ.get("PLEX_TOKEN")
-    trakt_token = os.environ.get("TRAKT_ACCESS_TOKEN")
-    trakt_client_id = os.environ.get("TRAKT_CLIENT_ID")
-    trakt_enabled = SYNC_PROVIDER == "trakt" and bool(trakt_token and trakt_client_id)
-    simkl_token = os.environ.get("SIMKL_ACCESS_TOKEN")
-    simkl_client_id = os.environ.get("SIMKL_CLIENT_ID")
-    simkl_enabled = SYNC_PROVIDER == "simkl" and bool(simkl_token and simkl_client_id)
-
-    if not all([plex_baseurl, plex_token]):
-        logger.error("Missing environment variables for Plex.")
-        return
-    if not trakt_enabled and not simkl_enabled:
-        logger.error("Missing environment variables for selected provider.")
+    """Run the main synchronization logic."""
+    if not test_connections():
+        logger.error("Sync cancelled due to connection errors.")
         return
 
-    plex = PlexServer(plex_baseurl, plex_token)
+    logger.info("Starting sync...")
+    trakt_enabled = os.path.exists(TOKEN_FILE)
+    simkl_enabled = os.path.exists(SIMKL_TOKEN_FILE)
 
-    headers = None
-    if trakt_enabled:
+    headers = {}
+    if SYNC_PROVIDER == "trakt" and trakt_enabled:
+        if not refresh_trakt_token():
+            logger.error("Failed to refresh Trakt token. Aborting sync.")
+            return
+        load_trakt_tokens()
         headers = {
-            "Authorization": f"Bearer {trakt_token}",
             "Content-Type": "application/json",
-            "User-Agent": "PlexyTrackt/1.0.0",
+            "Authorization": f"Bearer {os.environ.get('TRAKT_ACCESS_TOKEN')}",
             "trakt-api-version": "2",
-            "trakt-api-key": trakt_client_id,
+            "trakt-api-key": os.environ["TRAKT_CLIENT_ID"],
         }
-    elif simkl_enabled:
+    elif SYNC_PROVIDER == "simkl" and simkl_enabled:
+        load_simkl_tokens()
         headers = {
-            "Authorization": f"Bearer {simkl_token}",
             "Content-Type": "application/json",
-            "User-Agent": "PlexyTrackt/1.0.0",
-            "simkl-api-key": simkl_client_id,
+            "Authorization": f"Bearer {os.environ.get('SIMKL_ACCESS_TOKEN')}",
+            "simkl-api-key": os.environ["SIMKL_CLIENT_ID"],
         }
 
-    if SYNC_COLLECTION and trakt_enabled:
-        try:
-            sync_collection(plex, headers)
-        except TraktAccountLimitError as exc:
-            logger.error("Collection sync skipped: %s", exc)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Collection sync failed: %s", exc)
-    if SYNC_RATINGS and trakt_enabled:
-        try:
-            sync_ratings(plex, headers)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Ratings sync failed: %s", exc)
-
-    try:
-        plex_movies, plex_episodes = get_plex_history(plex)
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Failed to retrieve Plex history: %s", exc)
-        plex_movies, plex_episodes = {}, {}
-    plex_movie_guids = set(plex_movies.keys())
-    plex_episode_guids = set(plex_episodes.keys())
-
-    if trakt_enabled:
-        try:
-            trakt_movies, trakt_episodes = get_trakt_history(headers)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Failed to retrieve Trakt history: %s", exc)
-            trakt_movies, trakt_episodes = {}, {}
-        trakt_movie_guids = set(trakt_movies.keys())
-        trakt_episode_guids = set(trakt_episodes.keys())
-    elif simkl_enabled:
-        try:
-            simkl_movies, simkl_episodes = get_simkl_history(headers)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Failed to retrieve Simkl history: %s", exc)
-            simkl_movies, simkl_episodes = {}, {}
-        trakt_movies, trakt_episodes = simkl_movies, simkl_episodes
-        trakt_movie_guids = set(simkl_movies.keys())
-        trakt_episode_guids = set(simkl_episodes.keys())
-    else:
-        trakt_movies, trakt_episodes = {}, {}
-        trakt_movie_guids = set()
-        trakt_episode_guids = set()
-
+    plex_movies, plex_episodes = get_plex_history(plex)
     logger.info(
-        "Plex history:   %d movies, %d episodes",
-        len(plex_movie_guids),
-        len(plex_episode_guids),
+        "Found %d movies and %d episodes in Plex history.",
+        len(plex_movies),
+        len(plex_episodes),
     )
-    if trakt_enabled:
-        logger.info(
-            "Trakt history:  %d movies, %d episodes",
-            len(trakt_movie_guids),
-            len(trakt_episode_guids),
-        )
-    elif simkl_enabled:
-        logger.info("Simkl history: %d movies", len(trakt_movie_guids))
 
-    new_movies = [
-        (data["title"], data["year"], data["watched_at"], guid)
-        for guid, data in plex_movies.items()
-        if guid not in trakt_movie_guids
-    ]
-    new_episodes = [
-        (data["show"], data["code"], data["watched_at"], guid)
-        for guid, data in plex_episodes.items()
-        if guid not in trakt_episode_guids
-    ]
-
-    # Permite desactivar la sync de vistos desde la interfaz
-    if SYNC_WATCHED:
-        try:
-            if trakt_enabled:
-                update_trakt(headers, new_movies, new_episodes)
-            elif simkl_enabled:
-                update_simkl(headers, new_movies)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Failed updating provider history: %s", exc)
-    missing_movies = {
-        (title, year, guid)
-        for guid, (title, year, _watched) in trakt_movies.items()
-        if guid not in plex_movie_guids
-    }
-    missing_episodes = {
-        (show, code, guid)
-        for guid, (show, code, _watched) in trakt_episodes.items()
-        if guid not in plex_episode_guids
-    }
     try:
-        update_plex(plex, missing_movies, missing_episodes)
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Failed updating Plex history: %s", exc)
+        if SYNC_PROVIDER == "trakt":
+            logger.info("Provider: Trakt")
+            trakt_movies, trakt_episodes = get_trakt_history(headers)
 
-    if SYNC_LIKED_LISTS and trakt_enabled:
-        try:
-            sync_liked_lists(plex, headers)
-            sync_collections_to_trakt(plex, headers)
-        except TraktAccountLimitError as exc:
-            logger.error("Liked-lists sync skipped: %s", exc)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Liked-lists sync failed: %s", exc)
-    if SYNC_WATCHLISTS and trakt_enabled:
-        try:
-            sync_watchlist(
-                plex,
-                headers,
-                plex_movie_guids | plex_episode_guids,
-                trakt_movie_guids | trakt_episode_guids,
+            # Plex -> Trakt
+            movies_to_add = set(plex_movies) - set(trakt_movies)
+            episodes_to_add = set(plex_episodes) - set(trakt_episodes)
+            logger.info(
+                "Found %d movies and %d episodes to add to Trakt",
+                len(movies_to_add),
+                len(episodes_to_add),
             )
-        except TraktAccountLimitError as exc:
-            logger.error("Watchlist sync skipped: %s", exc)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Watchlist sync failed: %s", exc)
+            movies_to_add_fmt = [
+                (
+                    plex_movies[m]["title"],
+                    plex_movies[m]["year"],
+                    plex_movies[m].get("watched_at"),
+                    m,
+                )
+                for m in movies_to_add
+            ]
+            episodes_to_add_fmt = [
+                (
+                    plex_episodes[e]["show"],
+                    plex_episodes[e]["code"],
+                    plex_episodes[e].get("watched_at"),
+                    e,
+                )
+                for e in episodes_to_add
+            ]
+            if movies_to_add_fmt or episodes_to_add_fmt:
+                update_trakt(headers, movies_to_add_fmt, episodes_to_add_fmt)
 
-    logger.info("Synchronization job finished")
+            # Trakt -> Plex
+            movies_to_add_plex = set(trakt_movies) - set(plex_movies)
+            episodes_to_add_plex = set(trakt_episodes) - set(plex_episodes)
+            logger.info(
+                "Found %d movies and %d episodes to add to Plex",
+                len(movies_to_add_plex),
+                len(episodes_to_add_plex),
+            )
+            movies_to_add_plex_fmt = {
+                (trakt_movies[m][0], trakt_movies[m][1], m)
+                for m in movies_to_add_plex
+            }
+            episodes_to_add_plex_fmt = {
+                (trakt_episodes[e][0], trakt_episodes[e][1], e)
+                for e in episodes_to_add_plex
+            }
+            if movies_to_add_plex_fmt or episodes_to_add_plex_fmt:
+                update_plex(plex, movies_to_add_plex_fmt, episodes_to_add_plex_fmt)
 
+        elif SYNC_PROVIDER == "simkl":
+            logger.info("Provider: Simkl")
+            simkl_movies, simkl_episodes = get_simkl_history(headers)
+            logger.info(
+                "Found %d movies and %d episodes in Simkl history.",
+                len(simkl_movies),
+                len(simkl_episodes),
+            )
 
-# --------------------------------------------------------------------------- #
-# BACKUP HANDLING
-# --------------------------------------------------------------------------- #
+            # Plex -> Simkl
+            movies_to_add = set(plex_movies) - set(simkl_movies)
+            episodes_to_add = set(plex_episodes) - set(simkl_episodes)
+
+            logger.info(
+                "Found %d movies and %d episodes to add to Simkl",
+                len(movies_to_add),
+                len(episodes_to_add),
+            )
+
+            movies_to_add_fmt = [
+                (
+                    plex_movies[m]["title"],
+                    plex_movies[m]["year"],
+                    m,
+                    plex_movies[m].get("watched_at"),
+                )
+                for m in movies_to_add
+            ]
+            # Para cada episodio necesitamos el GUID de la SERIE (no el del episodio) para que Simkl pueda identificarla correctamente.
+            episodes_to_add_fmt = []
+            for e in episodes_to_add:
+                ep_info = plex_episodes[e]
+                show_title = ep_info["show"]
+                code = ep_info["code"]
+                watched_at = ep_info.get("watched_at")
+
+                # Intentamos obtener la serie desde la biblioteca de Plex para extraer un GUID válido (imdb/tmdb/tvdb) a nivel de serie.
+                show_guid = None
+                try:
+                    show_obj = get_show_from_library(plex, show_title)
+                    if show_obj:
+                        show_guid = imdb_guid(show_obj) or best_guid(show_obj)
+                except Exception as exc:
+                    logger.debug("No se pudo obtener GUID de la serie %s: %s", show_title, exc)
+
+                # Si seguimos sin GUID de serie, recurrimos al GUID del episodio como último recurso.
+                if show_guid is None:
+                    show_guid = e
+
+                episodes_to_add_fmt.append(
+                    (
+                        show_title,
+                        code,
+                        show_guid,
+                        watched_at,
+                    )
+                )
+             
+            if movies_to_add_fmt or episodes_to_add_fmt:
+                update_simkl(headers, movies_to_add_fmt, episodes_to_add_fmt)
+
+            # Plex <- Simkl
+            movies_to_add_plex = set(simkl_movies) - set(plex_movies)
+            episodes_to_add_plex = set(simkl_episodes) - set(plex_episodes)
+            logger.info(
+                "Found %d movies and %d episodes to add to Plex",
+                len(movies_to_add_plex),
+                len(episodes_to_add_plex),
+            )
+            movies_to_add_plex_fmt = {
+                (simkl_movies[m][0], simkl_movies[m][1], m)
+                for m in movies_to_add_plex
+            }
+            episodes_to_add_plex_fmt = {
+                (simkl_episodes[e][0], simkl_episodes[e][1], e)
+                for e in episodes_to_add_plex
+            }
+            if movies_to_add_plex_fmt or episodes_to_add_plex_fmt:
+                update_plex(plex, movies_to_add_plex_fmt, episodes_to_add_plex_fmt)
+
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Error during sync: %s", exc)
+
+    # Sincronizar valoraciones solo es compatible con Trakt por ahora
+    if SYNC_RATINGS and SYNC_PROVIDER == "trakt":
+        sync_ratings(plex, headers)
+    elif SYNC_RATINGS and SYNC_PROVIDER == "simkl":
+        logger.warning("La sincronización de valoraciones con Simkl todavía no está soportada.")
+
+    if SYNC_WATCHLISTS and SYNC_PROVIDER == "trakt":
+        sync_watchlist(plex, headers, plex_movies, trakt_movies)
+    elif SYNC_WATCHLISTS and SYNC_PROVIDER == "simkl":
+        logger.warning("Watchlist sync with Simkl is not yet supported.")
+
+    if SYNC_COLLECTION:
+        sync_collection(plex, headers)
+
+    if SYNC_LIKED_LISTS and SYNC_PROVIDER == "trakt":
+        sync_liked_lists(plex, headers)
+    elif SYNC_LIKED_LISTS and SYNC_PROVIDER == "simkl":
+        logger.warning("Liked lists sync with Simkl is not yet supported.")
+
+    if SYNC_PROVIDER == "trakt":
+        sync_collections_to_trakt(plex, headers)
+    elif SYNC_PROVIDER == "simkl":
+        logger.warning("Plex Collections sync to Simkl is not yet supported.")
+
+    logger.info("Sync finished.")
 
 
 def fetch_trakt_history_full(headers) -> list:
@@ -1909,6 +2400,7 @@ def plex_webhook():
 # SCHEDULER STARTUP
 # --------------------------------------------------------------------------- #
 def test_connections() -> bool:
+    global plex
     plex_baseurl = os.environ.get("PLEX_BASEURL")
     plex_token = os.environ.get("PLEX_TOKEN")
     trakt_token = os.environ.get("TRAKT_ACCESS_TOKEN")
@@ -1926,10 +2418,12 @@ def test_connections() -> bool:
         return False
 
     try:
-        PlexServer(plex_baseurl, plex_token).account()
+        plex = PlexServer(plex_baseurl, plex_token)
+        plex.account()
         logger.info("Successfully connected to Plex.")
     except Exception as exc:
         logger.error("Failed to connect to Plex: %s", exc)
+        plex = None
         return False
 
     if trakt_enabled:
@@ -1966,27 +2460,27 @@ def test_connections() -> bool:
 
 
 def start_scheduler():
-    # Remove existing job if it exists to prevent duplicates
-    existing_job = scheduler.get_job("sync_job")
-    if existing_job:
-        scheduler.remove_job("sync_job")
-        logger.info("Removed existing sync job")
-    
-    if scheduler.running:
-        scheduler.add_job(
-            sync,
-            "interval",
-            minutes=SYNC_INTERVAL_MINUTES,
-            id="sync_job",
-            replace_existing=True,
-        )
-        logger.info("Sync job added with interval %d minutes", SYNC_INTERVAL_MINUTES)
-        return
-    
-    if not test_connections():
-        logger.error("Connection test failed. Scheduler will not start.")
-        return
-    
+    """Arranca o reinicia el scheduler garantizando **un único** job activo.
+
+    1. Si el scheduler no está corriendo se hace un *start* tras validar
+       conexiones.
+    2. Antes de añadir el nuevo trabajo se eliminan TODOS los jobs existentes
+       para evitar duplicados.
+    """
+    # Iniciamos el scheduler si no está corriendo todavía
+    if not scheduler.running:
+        if not test_connections():
+            logger.error("Connection test failed. Scheduler will not start.")
+            return
+        scheduler.start()
+        logger.info("Scheduler started")
+
+    # Eliminamos cualquier job existente para garantizar que sólo haya uno
+    for job in scheduler.get_jobs():
+        scheduler.remove_job(job.id)
+    logger.info("Removed existing scheduled job(s)")
+
+    # Añadimos el nuevo trabajo periódico
     scheduler.add_job(
         sync,
         "interval",
@@ -1994,15 +2488,17 @@ def start_scheduler():
         id="sync_job",
         replace_existing=True,
     )
-    scheduler.start()
-    logger.info("Scheduler started with interval %d minutes", SYNC_INTERVAL_MINUTES)
+    logger.info("Sync job scheduled with interval %d minutes", SYNC_INTERVAL_MINUTES)
 
 
 def stop_scheduler():
-    job = scheduler.get_job("sync_job")
-    if job:
-        scheduler.remove_job("sync_job")
-        logger.info("Synchronization job stopped")
+    """Detiene y elimina el job de sincronización dejando el scheduler limpio."""
+    for job in scheduler.get_jobs():
+        scheduler.remove_job(job.id)
+    if scheduler.running and not scheduler.get_jobs():
+        # Si no quedan trabajos activos podemos apagar el scheduler
+        scheduler.shutdown(wait=False)
+    logger.info("Synchronization job(s) stopped")
 
 
 # --------------------------------------------------------------------------- #

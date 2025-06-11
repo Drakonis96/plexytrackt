@@ -49,7 +49,7 @@ If you don't already have the Trakt or Simkl credentials, please see the next se
 ### Collections and watchlists
 
 If you mark a list as liked on Trakt, PlexyTrack will create a Plex collection with the same name and add the matching movies or shows found in your library. Likewise, any collection created in Plex will be mirrored as a list on Trakt. Watchlists are also kept in sync both ways, so adding or removing an item in one platform is reflected in the other.
-When the Simkl provider is selected, your Plex library is added to your completed history on Simkl and Plex collections are mirrored as Simkl lists.
+When the Simkl provider is selected, watched movies from Plex are sent to your Simkl history. Matching uses IMDb, TMDb or TVDb IDs (in that order) to ensure accurate identification. Plex collections are also mirrored as Simkl lists.
 
 ### Backup and restore
 

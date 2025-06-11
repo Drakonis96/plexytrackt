@@ -496,6 +496,87 @@ def trakt_request(
     return resp
 
 
+def simkl_request(
+    method: str, endpoint: str, headers: dict, **kwargs
+) -> requests.Response:
+    """Perform a request against the Simkl API."""
+    url = f"https://api.simkl.com{endpoint}"
+    resp = requests.request(method, url, headers=headers, timeout=30, **kwargs)
+    resp.raise_for_status()
+    return resp
+
+
+def simkl_movie_key(m: dict) -> Optional[str]:
+    """Return best GUID for a Simkl movie object."""
+    ids = m.get("ids", {})
+    if ids.get("imdb"):
+        return f"imdb://{ids['imdb']}"
+    if ids.get("tmdb"):
+        return f"tmdb://{ids['tmdb']}"
+    if ids.get("tvdb"):
+        return f"tvdb://{ids['tvdb']}"
+    return None
+
+
+def get_simkl_history(
+    headers: dict,
+) -> Dict[str, Tuple[str, Optional[int], Optional[str]]]:
+    """Return Simkl movie history keyed by best GUID."""
+    movies: Dict[str, Tuple[str, Optional[int], Optional[str]]] = {}
+    page = 1
+    logger.info("Fetching Simkl history…")
+    while True:
+        resp = simkl_request(
+            "GET",
+            "/sync/history",
+            headers,
+            params={"page": page, "limit": 100, "type": "movies"},
+        )
+        data = resp.json()
+        if not isinstance(data, list) or not data:
+            break
+        for item in data:
+            m = item.get("movie", {})
+            guid = simkl_movie_key(m)
+            if not guid:
+                continue
+            if guid not in movies:
+                movies[guid] = (
+                    m.get("title"),
+                    normalize_year(m.get("year")),
+                    item.get("watched_at"),
+                )
+        page += 1
+    return movies
+
+
+def update_simkl(
+    headers: dict,
+    movies: List[Tuple[str, Optional[int], Optional[str], Optional[str]]],
+) -> None:
+    payload = {"movies": []}
+
+    for title, year, watched_at, guid in movies:
+        if not valid_guid(guid):
+            continue
+        movie_obj = {"title": title}
+        if year is not None:
+            movie_obj["year"] = year
+        ids = guid_to_ids(guid)
+        if ids:
+            movie_obj["ids"] = ids
+        if watched_at:
+            movie_obj["watched_at"] = watched_at
+        payload["movies"].append(movie_obj)
+
+    if not payload["movies"]:
+        logger.info("Nothing new to send to Simkl.")
+        return
+
+    simkl_request("POST", "/sync/history", headers, json=payload)
+    logger.info("Sent %d movies to Simkl", len(payload["movies"]))
+
+
 # --------------------------------------------------------------------------- #
 # PLEX ↔ TRAKT
 # --------------------------------------------------------------------------- #
@@ -1156,11 +1237,14 @@ def sync():
     trakt_token = os.environ.get("TRAKT_ACCESS_TOKEN")
     trakt_client_id = os.environ.get("TRAKT_CLIENT_ID")
     trakt_enabled = SYNC_PROVIDER == "trakt" and bool(trakt_token and trakt_client_id)
+    simkl_token = os.environ.get("SIMKL_ACCESS_TOKEN")
+    simkl_client_id = os.environ.get("SIMKL_CLIENT_ID")
+    simkl_enabled = SYNC_PROVIDER == "simkl" and bool(simkl_token and simkl_client_id)
 
     if not all([plex_baseurl, plex_token]):
         logger.error("Missing environment variables for Plex.")
         return
-    if not trakt_enabled:
+    if not trakt_enabled and not simkl_enabled:
         logger.error("Missing environment variables for selected provider.")
         return
 
@@ -1174,6 +1258,13 @@ def sync():
             "User-Agent": "PlexyTrackt/1.0.0",
             "trakt-api-version": "2",
             "trakt-api-key": trakt_client_id,
+        }
+    elif simkl_enabled:
+        headers = {
+            "Authorization": f"Bearer {simkl_token}",
+            "Content-Type": "application/json",
+            "User-Agent": "PlexyTrackt/1.0.0",
+            "simkl-api-key": simkl_client_id,
         }
 
     if SYNC_COLLECTION and trakt_enabled:
@@ -1205,6 +1296,15 @@ def sync():
             trakt_movies, trakt_episodes = {}, {}
         trakt_movie_guids = set(trakt_movies.keys())
         trakt_episode_guids = set(trakt_episodes.keys())
+    elif simkl_enabled:
+        try:
+            simkl_movies = get_simkl_history(headers)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed to retrieve Simkl history: %s", exc)
+            simkl_movies = {}
+        trakt_movies, trakt_episodes = simkl_movies, {}
+        trakt_movie_guids = set(simkl_movies.keys())
+        trakt_episode_guids = set()
     else:
         trakt_movies, trakt_episodes = {}, {}
         trakt_movie_guids = set()
@@ -1221,6 +1321,8 @@ def sync():
             len(trakt_movie_guids),
             len(trakt_episode_guids),
         )
+    elif simkl_enabled:
+        logger.info("Simkl history: %d movies", len(trakt_movie_guids))
 
     new_movies = [
         (data["title"], data["year"], data["watched_at"], guid)
@@ -1238,8 +1340,10 @@ def sync():
         try:
             if trakt_enabled:
                 update_trakt(headers, new_movies, new_episodes)
+            elif simkl_enabled:
+                update_simkl(headers, new_movies)
         except Exception as exc:  # noqa: BLE001
-            logger.error("Failed updating Trakt history: %s", exc)
+            logger.error("Failed updating provider history: %s", exc)
     missing_movies = {
         (title, year, guid)
         for guid, (title, year, _watched) in trakt_movies.items()
@@ -1700,7 +1804,7 @@ def test_connections() -> bool:
     if not all([plex_baseurl, plex_token]):
         logger.error("Missing environment variables for Plex.")
         return False
-    if not trakt_enabled:
+    if not trakt_enabled and not simkl_enabled:
         logger.error("Missing environment variables for selected provider.")
         return False
 
@@ -1724,6 +1828,20 @@ def test_connections() -> bool:
             logger.info("Successfully connected to Trakt.")
         except Exception as exc:
             logger.error("Failed to connect to Trakt: %s", exc)
+            return False
+
+    if simkl_enabled:
+        headers = {
+            "Authorization": f"Bearer {simkl_token}",
+            "Content-Type": "application/json",
+            "User-Agent": "PlexyTrackt/1.0.0",
+            "simkl-api-key": simkl_client_id,
+        }
+        try:
+            simkl_request("GET", "/sync/history", headers, params={"limit": 1})
+            logger.info("Successfully connected to Simkl.")
+        except Exception as exc:
+            logger.error("Failed to connect to Simkl: %s", exc)
             return False
 
 

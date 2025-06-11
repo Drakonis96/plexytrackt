@@ -204,7 +204,7 @@ def best_guid(item) -> Optional[str]:
 
 
 def imdb_guid(item) -> Optional[str]:
-    """Return the IMDb GUID for a Plex item if available, otherwise TMDb."""
+    """Return an IMDb, TMDb or TVDb GUID for a Plex item."""
     try:
         for g in getattr(item, "guids", []) or []:
             val = _parse_guid_value(g.id)
@@ -214,11 +214,17 @@ def imdb_guid(item) -> Optional[str]:
             val = _parse_guid_value(g.id)
             if val and val.startswith("tmdb://"):
                 return val
+        for g in getattr(item, "guids", []) or []:
+            val = _parse_guid_value(g.id)
+            if val and val.startswith("tvdb://"):
+                return val
         if getattr(item, "guid", None):
             val = _parse_guid_value(item.guid)
             if val and val.startswith("imdb://"):
                 return val
             if val and val.startswith("tmdb://"):
+                return val
+            if val and val.startswith("tvdb://"):
                 return val
     except Exception as exc:
         logger.debug("Failed retrieving IMDb GUID: %s", exc)
@@ -277,6 +283,11 @@ def guid_to_ids(guid: str) -> Dict[str, Union[str, int]]:
     return {}
 
 
+def valid_guid(guid: Optional[str]) -> bool:
+    """Return True if ``guid`` is a valid IMDb, TMDb or TVDb identifier."""
+    return bool(guid) and guid.startswith(("imdb://", "tmdb://", "tvdb://"))
+
+
 def trakt_movie_key(m: dict) -> Union[str, Tuple[str, Optional[int]]]:
     """Return a unique key for a Trakt movie object using IMDb or TMDb."""
     ids = m.get("ids", {})
@@ -305,6 +316,21 @@ def trakt_episode_key(show: dict, e: dict) -> Union[str, Tuple[str, str]]:
         show["title"].lower(),
         f"S{e['season']:02d}E{e['number']:02d}",
     )
+
+
+def simkl_episode_key(show: dict, e: dict) -> Union[str, Tuple[str, str]]:
+    """Return a unique key for a Simkl episode object using ONLY TVDb IDs."""
+    ep_ids = e.get("ids", {})
+    if ep_ids.get("tvdb"):
+        return f"tvdb://{ep_ids['tvdb']}"
+    show_data = show.get("show", show)
+    show_ids = show_data.get("ids", {})
+    if show_ids.get("tvdb"):
+        show_guid = f"tvdb://{show_ids['tvdb']}"
+        return f"{show_guid}:S{e['season']:02d}E{e['number']:02d}"
+    # Si no hay TVDb, no hacemos matching
+    return None
+
 
 
 # --------------------------------------------------------------------------- #
@@ -677,7 +703,9 @@ def update_trakt(
         if year is not None:
             movie_obj["year"] = year
         if guid:
-            movie_obj["ids"] = guid_to_ids(guid)
+            movie_ids = guid_to_ids(guid)
+            if movie_ids:
+                movie_obj["ids"] = movie_ids
         if watched_at:
             movie_obj["watched_at"] = watched_at
         payload["movies"].append(movie_obj)
@@ -729,11 +757,12 @@ def get_simkl_history(
     logger.info("Fetching Simkl history…")
     resp = simkl_request(
         "GET",
-        "/sync/get-all-items",
+        "/sync/all-items",
         headers,
         params={"extended": "full", "episode_watched_at": "yes"},
     )
     data = resp.json()
+    logger.info(f"Simkl API response: {data}")
     if data is None:
         data = {}
     if not isinstance(data, dict):
@@ -741,40 +770,51 @@ def get_simkl_history(
         return movies, episodes
 
     for m in data.get("movies", []):
-        ids = m.get("ids", {})
-        watched_at = m.get("watched_at")
+        movie_data = m.get("movie", m)  # fallback for legacy format
+        ids = movie_data.get("ids", {})
+        watched_at = m.get("last_watched_at") or m.get("watched_at")
         guid = None
-        if ids.get("imdb"):
-            guid = f"imdb://{ids['imdb']}"
-        elif ids.get("tmdb"):
-            guid = f"tmdb://{ids['tmdb']}"
-        elif ids.get("tvdb"):
+        # Solo usar TVDb para Simkl
+        if ids.get("tvdb"):
             guid = f"tvdb://{ids['tvdb']}"
         if guid and guid not in movies:
             movies[guid] = (
-                m.get("title", ""),
-                normalize_year(m.get("year")),
+                movie_data.get("title", ""),
+                normalize_year(movie_data.get("year")),
                 watched_at,
             )
 
     for show in data.get("shows", []):
-        title = show.get("title", "")
+        show_data = show.get("show", show)  # fallback for legacy format
+        title = show_data.get("title", "")
+        
         for season in show.get("seasons", []):
             s_num = season.get("number")
+            if s_num is None:
+                continue  # Skip seasons without valid numbers
+                
             for ep in season.get("episodes", []):
-                ids = ep.get("ids", {})
                 watched_at = ep.get("watched_at")
-                guid = None
-                if ids.get("imdb"):
-                    guid = f"imdb://{ids['imdb']}"
-                elif ids.get("tmdb"):
-                    guid = f"tmdb://{ids['tmdb']}"
-                elif ids.get("tvdb"):
-                    guid = f"tvdb://{ids['tvdb']}"
-                if guid and guid not in episodes:
-                    episodes[guid] = (
+                ep_num = ep.get("number")
+                
+                if ep_num is None:
+                    continue  # Skip episodes without valid numbers
+                
+                # Create episode object with season and number for the key function
+                episode_obj = {
+                    "season": s_num,
+                    "number": ep_num,
+                    "ids": ep.get("ids", {})  # Include episode-specific IDs if available
+                }
+                
+                # Generate unique episode identifier using only TVDb
+                ep_guid = simkl_episode_key(show, episode_obj)
+                if not ep_guid:
+                    continue  # Solo episodios con TVDb
+                if ep_guid not in episodes:
+                    episodes[ep_guid] = (
                         title,
-                        f"S{s_num:02d}E{ep.get('number'):02d}",
+                        f"S{s_num:02d}E{ep_num:02d}",
                         watched_at,
                     )
 
@@ -795,7 +835,9 @@ def update_simkl(
         if year is not None:
             movie_obj["year"] = year
         if guid:
-            movie_obj["ids"] = guid_to_ids(guid)
+            movie_ids = guid_to_ids(guid)
+            if movie_ids:
+                movie_obj["ids"] = movie_ids
         if watched_at:
             movie_obj["watched_at"] = watched_at
         payload["movies"].append(movie_obj)
@@ -804,7 +846,9 @@ def update_simkl(
         if year is not None:
             list_movie["year"] = year
         if guid:
-            list_movie["ids"] = guid_to_ids(guid)
+            list_ids = guid_to_ids(guid)
+            if list_ids:
+                list_movie["ids"] = list_ids
         if watched_at:
             list_movie["watched_at"] = watched_at
         list_movies.append(list_movie)
@@ -814,7 +858,9 @@ def update_simkl(
         number = int(code[4:6])
         ep_obj = {"season": season, "number": number}
         if guid:
-            ep_obj["ids"] = guid_to_ids(guid)
+            ep_ids = guid_to_ids(guid)
+            if ep_ids:
+                ep_obj["ids"] = ep_ids
         else:
             show_obj = get_show_from_library(plex, show)
             show_ids = guid_to_ids(best_guid(show_obj)) if show_obj else {}
@@ -835,7 +881,9 @@ def update_simkl(
             if show_obj and getattr(show_obj, "year", None):
                 show_payload["year"] = normalize_year(show_obj.year)
             if show_guid:
-                show_payload["ids"] = guid_to_ids(show_guid)
+                show_ids_payload = guid_to_ids(show_guid)
+                if show_ids_payload:
+                    show_payload["ids"] = show_ids_payload
             if watched_at:
                 show_payload["watched_at"] = watched_at
             list_shows[key] = show_payload
@@ -1799,6 +1847,7 @@ def index():
         SYNC_LIKED_LISTS = request.form.get("liked_lists") is not None
         SYNC_WATCHLISTS = request.form.get("watchlists") is not None
         LIVE_SYNC = request.form.get("live_sync") is not None
+        start_scheduler()
         # Schedule an immediate sync without blocking the request
         scheduler.add_job(
             sync,
@@ -1874,6 +1923,10 @@ def config_page():
     if request.method == "POST":
         provider = request.form.get("provider", "none")
         save_provider(provider)
+        if provider == "none":
+            stop_scheduler()
+        else:
+            start_scheduler()
         return redirect(url_for("config_page"))
     trakt_configured = bool(os.environ.get("TRAKT_ACCESS_TOKEN"))
     simkl_configured = bool(os.environ.get("SIMKL_ACCESS_TOKEN"))
@@ -1893,9 +1946,13 @@ def authorize_service(service: str):
     if request.method == "POST":
         code = request.form.get("code", "").strip()
         if service == "trakt" and code and exchange_code_for_tokens(code):
+            if SYNC_PROVIDER == "none":
+                save_provider("trakt")
             start_scheduler()
             return redirect(url_for("config_page"))
         if service == "simkl" and code and exchange_code_for_simkl_tokens(code):
+            if SYNC_PROVIDER == "none":
+                save_provider("simkl")
             start_scheduler()
             return redirect(url_for("config_page"))
 
@@ -2084,7 +2141,7 @@ def test_connections() -> bool:
             "simkl-api-key": simkl_client_id,
         }
         try:
-            simkl_request("GET", "/sync/get-all-items", s_headers)
+            simkl_request("GET", "/sync/all-items", s_headers)
             logger.info("Successfully connected to Simkl.")
         except Exception as exc:
             logger.error("Failed to connect to Simkl: %s", exc)
@@ -2131,6 +2188,7 @@ def stop_scheduler():
 if __name__ == "__main__":
     logger.info("Starting PlexyTrackt application")
     load_trakt_tokens()
+    load_simkl_tokens()
     load_provider()
     start_scheduler()
     app.run(host="0.0.0.0", port=5030)

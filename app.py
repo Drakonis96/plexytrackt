@@ -298,6 +298,31 @@ def trakt_movie_key(m: dict) -> Union[str, Tuple[str, Optional[int]]]:
     return m["title"].lower()
 
 
+def simkl_movie_guid(m: dict) -> Optional[str]:
+    """Return IMDb, TMDb or TVDb GUID from a Simkl movie object."""
+    ids = m.get("ids", {})
+    if ids.get("imdb"):
+        return f"imdb://{ids['imdb']}"
+    if ids.get("tmdb"):
+        return f"tmdb://{ids['tmdb']}"
+    if ids.get("tvdb"):
+        return f"tvdb://{ids['tvdb']}"
+    return None
+
+
+def simkl_show_guid(show: dict) -> Optional[str]:
+    """Return IMDb, TMDb or TVDb GUID from a Simkl show object."""
+    show_data = show.get("show", show)
+    ids = show_data.get("ids", {})
+    if ids.get("imdb"):
+        return f"imdb://{ids['imdb']}"
+    if ids.get("tmdb"):
+        return f"tmdb://{ids['tmdb']}"
+    if ids.get("tvdb"):
+        return f"tvdb://{ids['tvdb']}"
+    return None
+
+
 def episode_key(
     show: str, code: str, guid: Optional[str]
 ) -> Union[str, Tuple[str, str]]:
@@ -333,15 +358,8 @@ def simkl_episode_key(show: dict, e: dict) -> Union[str, Tuple[str, str]]:
     if ep_ids.get("tvdb"):
         return f"tvdb://{ep_ids['tvdb']}"
 
-    show_data = show.get("show", show)
-    show_ids = show_data.get("ids", {})
-    if show_ids.get("imdb"):
-        show_guid = f"imdb://{show_ids['imdb']}"
-    elif show_ids.get("tmdb"):
-        show_guid = f"tmdb://{show_ids['tmdb']}"
-    elif show_ids.get("tvdb"):
-        show_guid = f"tvdb://{show_ids['tvdb']}"
-    else:
+    show_guid = simkl_show_guid(show)
+    if not show_guid:
         return None
 
     return f"{show_guid}:S{e['season']:02d}E{e['number']:02d}"
@@ -787,15 +805,8 @@ def get_simkl_history(
 
     for m in data.get("movies", []):
         movie_data = m.get("movie", m)  # fallback for legacy format
-        ids = movie_data.get("ids", {})
         watched_at = m.get("last_watched_at") or m.get("watched_at")
-        guid = None
-        if ids.get("imdb"):
-            guid = f"imdb://{ids['imdb']}"
-        elif ids.get("tmdb"):
-            guid = f"tmdb://{ids['tmdb']}"
-        elif ids.get("tvdb"):
-            guid = f"tvdb://{ids['tvdb']}"
+        guid = simkl_movie_guid(movie_data)
         if guid and guid not in movies:
             movies[guid] = (
                 movie_data.get("title", ""),
@@ -823,7 +834,7 @@ def get_simkl_history(
                 episode_obj = {
                     "season": s_num,
                     "number": ep_num,
-                    "ids": ep.get("ids", {})  # Include episode-specific IDs if available
+                    "ids": ep.get("ids", {}),  # Include episode-specific IDs if available
                 }
                 
                 # Generate unique episode identifier preferring IMDb, then TMDb

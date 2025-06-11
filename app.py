@@ -1167,13 +1167,19 @@ def sync_liked_lists(plex, headers):
             "user", {}
         ).get("username")
         slug = lst.get("ids", {}).get("slug")
+        list_id = lst.get("ids", {}).get("trakt")
         name = lst.get("name", slug)
         if not owner or not slug:
             continue
         try:
-            items = trakt_request(
-                "GET", f"/users/{owner}/lists/{slug}/items", headers
-            ).json()
+            if list_id:
+                items = trakt_request(
+                    "GET", f"/lists/{list_id}/items", headers
+                ).json()
+            else:
+                items = trakt_request(
+                    "GET", f"/lists/{slug}/items", headers
+                ).json()
         except Exception as exc:
             logger.error("Failed to fetch list %s/%s: %s", owner, slug, exc)
             continue
@@ -1213,85 +1219,6 @@ def sync_liked_lists(plex, headers):
                         pass
 
 
-def sync_collections_to_trakt(plex, headers):
-    """Create or update Trakt lists from Plex collections."""
-    try:
-        user_data = trakt_request("GET", "/users/settings", headers).json()
-        username = user_data.get("user", {}).get("ids", {}).get(
-            "slug"
-        ) or user_data.get("user", {}).get("username")
-        lists = trakt_request("GET", f"/users/{username}/lists", headers).json()
-    except Exception as exc:
-        logger.error("Failed to fetch Trakt lists: %s", exc)
-        return
-
-    slug_by_name = {l.get("name"): l.get("ids", {}).get("slug") for l in lists}
-
-    for sec in plex.library.sections():
-        if sec.type not in ("movie", "show"):
-            continue
-        for coll in sec.collections():
-            slug = slug_by_name.get(coll.title)
-            if not slug:
-                try:
-                    resp = trakt_request(
-                        "POST",
-                        f"/users/{username}/lists",
-                        headers,
-                        json={"name": coll.title},
-                    )
-                    slug = resp.json().get("ids", {}).get("slug")
-                    slug_by_name[coll.title] = slug
-                except Exception as exc:
-                    logger.error("Failed creating list %s: %s", coll.title, exc)
-                    continue
-            try:
-                items = trakt_request(
-                    "GET",
-                    f"/users/{username}/lists/{slug}/items",
-                    headers,
-                ).json()
-            except Exception as exc:
-                logger.error("Failed to fetch list %s items: %s", slug, exc)
-                continue
-            trakt_guids = set()
-            for it in items:
-                data = it.get(it["type"], {})
-                ids = data.get("ids", {})
-                if ids.get("imdb"):
-                    trakt_guids.add(f"imdb://{ids['imdb']}")
-                elif ids.get("tmdb"):
-                    trakt_guids.add(f"tmdb://{ids['tmdb']}")
-            movies = []
-            shows = []
-            for item in coll.items():
-                guid = imdb_guid(item)
-                if not guid or guid in trakt_guids:
-                    continue
-                if item.type == "movie":
-                    movies.append({"ids": guid_to_ids(guid)})
-                elif item.type == "show":
-                    shows.append({"ids": guid_to_ids(guid)})
-            payload = {}
-            if movies:
-                payload["movies"] = movies
-            if shows:
-                payload["shows"] = shows
-            if payload:
-                try:
-                    trakt_request(
-                        "POST",
-                        f"/users/{username}/lists/{slug}/items",
-                        headers,
-                        json=payload,
-                    )
-                    logger.info(
-                        "Updated Trakt list %s with %d items",
-                        slug,
-                        len(movies) + len(shows),
-                    )
-                except Exception as exc:
-                    logger.error("Failed updating list %s: %s", slug, exc)
 
 
 def sync_watchlist(plex, headers, plex_history, trakt_history):
@@ -1443,90 +1370,6 @@ def sync_simkl_library(plex, headers):
             logger.error("Failed syncing shows to Simkl: %s", exc)
 
 
-def sync_collections_to_simkl(plex, headers):
-    """Create or update Simkl lists from Plex collections."""
-    try:
-        user_data = simkl_request("GET", "/users/settings", headers).json()
-        username = (
-            user_data.get("user", {}).get("username")
-            or user_data.get("user", {}).get("ids", {}).get("slug")
-        )
-        resp = simkl_request("GET", f"/users/{username}/lists", headers)
-        lists = resp.json()
-        if not isinstance(lists, list):
-            logger.error("Unexpected response when fetching Simkl lists: %s", lists)
-            return
-    except Exception as exc:
-        logger.error("Failed to fetch Simkl lists: %s", exc)
-        return
-
-    slug_by_name = {l.get("name"): l.get("ids", {}).get("slug") for l in lists}
-
-    for sec in plex.library.sections():
-        if sec.type not in ("movie", "show"):
-            continue
-        for coll in sec.collections():
-            slug = slug_by_name.get(coll.title)
-            if not slug:
-                try:
-                    resp = simkl_request(
-                        "POST",
-                        f"/users/{username}/lists",
-                        headers,
-                        json={"name": coll.title},
-                    )
-                    slug = resp.json().get("ids", {}).get("slug")
-                    slug_by_name[coll.title] = slug
-                except Exception as exc:
-                    logger.error("Failed creating Simkl list %s: %s", coll.title, exc)
-                    continue
-            try:
-                items = simkl_request(
-                    "GET",
-                    f"/users/{username}/lists/{slug}/items",
-                    headers,
-                ).json()
-            except Exception as exc:
-                logger.error("Failed to fetch Simkl list %s items: %s", slug, exc)
-                continue
-            simkl_guids = set()
-            for it in items:
-                data = it.get(it["type"], {})
-                ids = data.get("ids", {})
-                if ids.get("imdb"):
-                    simkl_guids.add(f"imdb://{ids['imdb']}")
-                elif ids.get("tmdb"):
-                    simkl_guids.add(f"tmdb://{ids['tmdb']}")
-            movies = []
-            shows = []
-            for item in coll.items():
-                guid = imdb_guid(item)
-                if not guid or guid in simkl_guids:
-                    continue
-                if item.type == "movie":
-                    movies.append({"ids": guid_to_ids(guid)})
-                elif item.type == "show":
-                    shows.append({"ids": guid_to_ids(guid)})
-            payload = {}
-            if movies:
-                payload["movies"] = movies
-            if shows:
-                payload["shows"] = shows
-            if payload:
-                try:
-                    simkl_request(
-                        "POST",
-                        f"/users/{username}/lists/{slug}/items",
-                        headers,
-                        json=payload,
-                    )
-                    logger.info(
-                        "Updated Simkl list %s with %d items",
-                        slug,
-                        len(movies) + len(shows),
-                    )
-                except Exception as exc:
-                    logger.error("Failed updating Simkl list %s: %s", slug, exc)
 
 
 # --------------------------------------------------------------------------- #
@@ -1695,16 +1538,10 @@ def sync():
     if SYNC_LIKED_LISTS and trakt_enabled:
         try:
             sync_liked_lists(plex, headers)
-            sync_collections_to_trakt(plex, headers)
         except TraktAccountLimitError as exc:
             logger.error("Liked-lists sync skipped: %s", exc)
         except Exception as exc:  # noqa: BLE001
             logger.error("Liked-lists sync failed: %s", exc)
-    if SYNC_LIKED_LISTS and simkl_enabled:
-        try:
-            sync_collections_to_simkl(plex, simkl_headers)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Simkl lists sync failed: %s", exc)
     if SYNC_WATCHLISTS and trakt_enabled:
         try:
             sync_watchlist(

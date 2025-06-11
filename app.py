@@ -968,45 +968,32 @@ def get_plex_history(plex) -> Tuple[
             code = f"S{int(season):02d}E{int(number):02d}"
 
             # ------------------- Determinar clave normalizada ------------------- #
-            if guid:
-                key = guid  # GUID a nivel de episodio
+
+            # Preferimos usar GUID de serie + codigo para coincidir con Simkl.
+            series_guid: Optional[str] = None
+
+            # (1) GUID directo desde el episodio
+            if item is not None:
+                gp_guid_raw = getattr(item, "grandparentGuid", None)
+                if gp_guid_raw:
+                    series_guid = _parse_guid_value(gp_guid_raw)
+
+            # (2) consulta a la cache
+            if series_guid is None and show in show_guid_cache:
+                series_guid = show_guid_cache[show]
+
+            # (3) busqueda en biblioteca si todavia no tenemos GUID
+            if series_guid is None and show:
+                series_obj = get_show_from_library(plex, show)
+                series_guid = imdb_guid(series_obj) if series_obj else None
+                show_guid_cache[show] = series_guid
+
+            if series_guid and valid_guid(series_guid):
+                key = (series_guid, code)
+            elif guid:
+                key = guid
             else:
-                # ------------------------------------------------------------------ #
-                # Intentar obtener un GUID de serie consistente con los proveedores
-                # externos. Se siguen varios pasos en orden de preferencia:
-                #   1) grandparentGuid del propio episodio (si existe)
-                #   2) Caché interna show_guid_cache
-                #   3) Búsqueda flexible en la biblioteca usando get_show_from_library
-                # Si tras estos pasos no conseguimos un GUID válido, caemos al
-                # fallback basado en el título + código de episodio.
-                # ------------------------------------------------------------------ #
-
-                series_guid: Optional[str] = None
-
-                # (1) GUID directo desde el episodio
-                if item is not None:
-                    gp_guid_raw = getattr(item, "grandparentGuid", None)
-                    if gp_guid_raw:
-                        series_guid = _parse_guid_value(gp_guid_raw)
-
-                # (2) consulta a la caché
-                if series_guid is None and show in show_guid_cache:
-                    series_guid = show_guid_cache[show]
-
-                # (3) búsqueda en biblioteca si todavía no tenemos GUID
-                if series_guid is None and show:
-                    series_obj = get_show_from_library(plex, show)
-                    series_guid = imdb_guid(series_obj) if series_obj else None
-                    # Memoizar resultado (aunque sea None) para evitar repetir búsquedas
-                    show_guid_cache[show] = series_guid
-
-                # Composición de la clave normalizada
-                if series_guid and valid_guid(series_guid):
-                    key = (series_guid, code)
-                else:
-                    # Último recurso: título de la serie en minúsculas
-                    key = (show.lower() if show else "", code)
-
+                key = (show.lower() if show else "", code)
             if key not in episodes:
                 episodes[key] = {
                     "show": show,

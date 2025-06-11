@@ -2210,4 +2210,5 @@ if __name__ == "__main__":
     load_simkl_tokens()
     load_provider()
     start_scheduler()
-    app.run(host="0.0.0.0", port=5030)
+    # Disable Flask's auto-reloader to avoid duplicate logs
+    app.run(host="0.0.0.0", port=5030, use_reloader=False)

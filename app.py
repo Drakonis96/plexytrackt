@@ -244,19 +244,6 @@ def imdb_guid(item) -> Optional[str]:
     return None
 
 
-def plex_show_guid(item) -> Optional[str]:
-    """Return an IMDb, TMDb or TVDb GUID for an episode's show."""
-    try:
-        raw = getattr(item, "grandparentGuid", None)
-        if raw:
-            val = _parse_guid_value(raw)
-            if val:
-                return val
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("Failed retrieving show GUID: %s", exc)
-    return None
-
-
 def get_show_from_library(plex, title):
     """Return a show object from any library section."""
     for sec in plex.library.sections():
@@ -556,33 +543,21 @@ def simkl_movie_key(m: dict) -> Optional[str]:
     return None
 
 
-def simkl_show_key(s: dict) -> Optional[str]:
-    """Return best GUID for a Simkl show object."""
-    ids = s.get("ids", {})
-    if ids.get("imdb"):
-        return f"imdb://{ids['imdb']}"
-    if ids.get("tmdb"):
-        return f"tmdb://{ids['tmdb']}"
-    if ids.get("tvdb"):
-        return f"tvdb://{ids['tvdb']}"
-    return None
-
-
 def get_simkl_history(
     headers: dict,
 ) -> Tuple[
     Dict[str, Tuple[str, Optional[int], Optional[str]]],
-    Dict[Tuple[str, str], Tuple[str, str, Optional[str]]],
+    Dict[str, Tuple[str, str, Optional[str]]],
 ]:
-    """Return Simkl movie and episode history keyed by show GUID and code.
-
+    """Return Simkl movie and episode history keyed by best GUID.
+    
     Returns:
         Tuple containing:
         - Movies: Dict[guid, (title, year, watched_at)]
-        - Episodes: Dict[(show_guid, code), (show_title, code, watched_at)]
+        - Episodes: Dict[guid, (show_title, episode_code, watched_at)]
     """
     movies: Dict[str, Tuple[str, Optional[int], Optional[str]]] = {}
-    episodes: Dict[Tuple[str, str], Tuple[str, str, Optional[str]]] = {}
+    episodes: Dict[str, Tuple[str, str, Optional[str]]] = {}
     
     # First, get movies from sync/history (watched history)
     page = 1
@@ -626,15 +601,13 @@ def get_simkl_history(
         for item in data:
             e = item.get("episode", {})
             show = item.get("show", {})
-            show_guid = simkl_show_key(show)
-            if not show_guid:
+            guid = simkl_episode_key(show, e)
+            if not guid:
                 continue
-            code = f"S{e.get('season', 0):02d}E{e.get('number', 0):02d}"
-            key = (show_guid, code)
-            if key not in episodes:
-                episodes[key] = (
+            if guid not in episodes:
+                episodes[guid] = (
                     show.get("title"),
-                    code,
+                    f"S{e.get('season', 0):02d}E{e.get('number', 0):02d}",
                     item.get("watched_at"),
                 )
         page += 1
@@ -681,15 +654,13 @@ def get_simkl_history(
                             "number": episode_num,
                             "ids": episode.get("ids", {})
                         }
-                        show_guid = simkl_show_key(show)
-                        if not show_guid:
+                        guid = simkl_episode_key(show, e)
+                        if not guid:
                             continue
-                        code = f"S{season_num:02d}E{episode_num:02d}"
-                        key = (show_guid, code)
-                        if key not in episodes:
-                            episodes[key] = (
+                        if guid not in episodes:
+                            episodes[guid] = (
                                 show.get("title"),
-                                code,
+                                f"S{season_num:02d}E{episode_num:02d}",
                                 episode.get("watched_at"),
                             )
     
@@ -699,7 +670,6 @@ def get_simkl_history(
 def update_simkl(
     headers: dict,
     movies: List[Tuple[str, Optional[int], Optional[str], Optional[str]]],
-    episodes: List[Tuple[str, int, int, Optional[str]]],
 ) -> None:
     payload = {"movies": []}
 
@@ -716,42 +686,12 @@ def update_simkl(
             movie_obj["watched_at"] = watched_at
         payload["movies"].append(movie_obj)
 
-    shows_map: Dict[str, Dict] = {}
-    for show_guid, season, number, watched_at in episodes:
-        if not valid_guid(show_guid):
-            continue
-        ids = guid_to_ids(show_guid)
-        if not ids:
-            continue
-        show_entry = shows_map.setdefault(show_guid, {"ids": ids, "seasons": {}})
-        seasons = show_entry["seasons"]
-        season_entry = seasons.setdefault(season, [])
-        ep_obj = {"number": number}
-        if watched_at:
-            ep_obj["watched_at"] = watched_at
-        season_entry.append(ep_obj)
-
-    shows_payload = []
-    for show_entry in shows_map.values():
-        seasons_list = []
-        for season_num, eps in show_entry["seasons"].items():
-            seasons_list.append({"number": season_num, "episodes": eps})
-        show_obj = {"ids": show_entry["ids"], "seasons": seasons_list}
-        shows_payload.append(show_obj)
-
-    if shows_payload:
-        payload["shows"] = shows_payload
-
-    if not payload.get("movies") and not payload.get("shows"):
+    if not payload["movies"]:
         logger.info("Nothing new to send to Simkl.")
         return
 
     simkl_request("POST", "/sync/history", headers, json=payload)
-    logger.info(
-        "Sent %d movies and %d shows to Simkl",
-        len(payload.get("movies", [])),
-        len(payload.get("shows", [])),
-    )
+    logger.info("Sent %d movies to Simkl", len(payload["movies"]))
 
 
 # --------------------------------------------------------------------------- #
@@ -761,11 +701,7 @@ def get_plex_history(plex) -> Tuple[
     Dict[str, Dict[str, Optional[str]]],
     Dict[str, Dict[str, Optional[str]]],
 ]:
-    """Return watched movies and episodes from Plex keyed by IMDb or TMDb GUID.
-
-    Episode data now includes the show's GUID and numeric season/episode numbers
-    to allow matching against providers without episode-level IDs.
-    """
+    """Return watched movies and episodes from Plex keyed by IMDb or TMDb GUID."""
     movies: Dict[str, Dict[str, Optional[str]]] = {}
     episodes: Dict[str, Dict[str, Optional[str]]] = {}
 
@@ -813,10 +749,8 @@ def get_plex_history(plex) -> Tuple[
                 number = number or item.index
                 show = show or item.grandparentTitle
                 guid = imdb_guid(item)
-                show_guid = plex_show_guid(item)
             else:
                 guid = None
-                show_guid = None
             if None in (season, number, show):
                 continue
             code = f"S{int(season):02d}E{int(number):02d}"
@@ -826,9 +760,6 @@ def get_plex_history(plex) -> Tuple[
                     "code": code,
                     "watched_at": watched_at,
                     "guid": guid,
-                    "show_guid": show_guid,
-                    "season": int(season),
-                    "number": int(number),
                 }
 
     logger.info("Fetching watched flags from Plex library…")
@@ -856,9 +787,6 @@ def get_plex_history(plex) -> Tuple[
                             "code": code,
                             "watched_at": to_iso_z(getattr(ep, "lastViewedAt", None)),
                             "guid": guid,
-                            "show_guid": plex_show_guid(ep),
-                            "season": int(ep.seasonNumber),
-                            "number": int(ep.episodeNumber),
                         }
         except Exception as exc:
             logger.debug(
@@ -1518,31 +1446,11 @@ def sync():
         for guid, data in plex_movies.items()
         if guid not in trakt_movie_guids
     ]
-    if trakt_enabled:
-        new_episodes = [
-            (data["show"], data["code"], data["watched_at"], guid)
-            for guid, data in plex_episodes.items()
-            if guid not in trakt_episode_guids
-        ]
-    elif simkl_enabled:
-        plex_episode_keys = {
-            (data.get("show_guid"), data["code"])
-            for data in plex_episodes.values()
-            if data.get("show_guid")
-        }
-        new_episodes = [
-            (
-                data["show_guid"],
-                int(data["code"][1:3]),
-                int(data["code"][4:6]),
-                data["watched_at"],
-            )
-            for data in plex_episodes.values()
-            if data.get("show_guid")
-            and (data.get("show_guid"), data["code"]) not in trakt_episode_guids
-        ]
-    else:
-        new_episodes = []
+    new_episodes = [
+        (data["show"], data["code"], data["watched_at"], guid)
+        for guid, data in plex_episodes.items()
+        if guid not in trakt_episode_guids
+    ]
 
     # Permite desactivar la sync de vistos desde la interfaz
     if SYNC_WATCHED:
@@ -1550,7 +1458,7 @@ def sync():
             if trakt_enabled:
                 update_trakt(headers, new_movies, new_episodes)
             elif simkl_enabled:
-                update_simkl(headers, new_movies, new_episodes)
+                update_simkl(headers, new_movies)
         except Exception as exc:  # noqa: BLE001
             logger.error("Failed updating provider history: %s", exc)
     missing_movies = {
@@ -1558,25 +1466,11 @@ def sync():
         for guid, (title, year, _watched) in trakt_movies.items()
         if guid not in plex_movie_guids
     }
-    if trakt_enabled:
-        missing_episodes = {
-            (show, code, guid)
-            for guid, (show, code, _watched) in trakt_episodes.items()
-            if guid not in plex_episode_guids
-        }
-    elif simkl_enabled:
-        plex_episode_keys = {
-            (data.get("show_guid"), data["code"])
-            for data in plex_episodes.values()
-            if data.get("show_guid")
-        }
-        missing_episodes = {
-            (show, code, None)
-            for key, (show, code, _watched) in trakt_episodes.items()
-            if key not in plex_episode_keys
-        }
-    else:
-        missing_episodes = set()
+    missing_episodes = {
+        (show, code, guid)
+        for guid, (show, code, _watched) in trakt_episodes.items()
+        if guid not in plex_episode_guids
+    }
     try:
         update_plex(plex, missing_movies, missing_episodes)
     except Exception as exc:  # noqa: BLE001

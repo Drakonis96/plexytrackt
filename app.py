@@ -298,31 +298,6 @@ def trakt_movie_key(m: dict) -> Union[str, Tuple[str, Optional[int]]]:
     return m["title"].lower()
 
 
-def simkl_movie_guid(m: dict) -> Optional[str]:
-    """Return IMDb, TMDb or TVDb GUID from a Simkl movie object."""
-    ids = m.get("ids", {})
-    if ids.get("imdb"):
-        return f"imdb://{ids['imdb']}"
-    if ids.get("tmdb"):
-        return f"tmdb://{ids['tmdb']}"
-    if ids.get("tvdb"):
-        return f"tvdb://{ids['tvdb']}"
-    return None
-
-
-def simkl_show_guid(show: dict) -> Optional[str]:
-    """Return IMDb, TMDb or TVDb GUID from a Simkl show object."""
-    show_data = show.get("show", show)
-    ids = show_data.get("ids", {})
-    if ids.get("imdb"):
-        return f"imdb://{ids['imdb']}"
-    if ids.get("tmdb"):
-        return f"tmdb://{ids['tmdb']}"
-    if ids.get("tvdb"):
-        return f"tvdb://{ids['tvdb']}"
-    return None
-
-
 def episode_key(
     show: str, code: str, guid: Optional[str]
 ) -> Union[str, Tuple[str, str]]:
@@ -341,28 +316,6 @@ def trakt_episode_key(show: dict, e: dict) -> Union[str, Tuple[str, str]]:
         show["title"].lower(),
         f"S{e['season']:02d}E{e['number']:02d}",
     )
-
-
-def simkl_episode_key(show: dict, e: dict) -> Union[str, Tuple[str, str]]:
-    """Return a unique key for a Simkl episode object.
-
-    The function tries episode level IMDb, TMDb and TVDb identifiers in that
-    order. If none are available, the show level identifiers are used together
-    with the season and episode numbers.
-    """
-    ep_ids = e.get("ids", {})
-    if ep_ids.get("imdb"):
-        return f"imdb://{ep_ids['imdb']}"
-    if ep_ids.get("tmdb"):
-        return f"tmdb://{ep_ids['tmdb']}"
-    if ep_ids.get("tvdb"):
-        return f"tvdb://{ep_ids['tvdb']}"
-
-    show_guid = simkl_show_guid(show)
-    if not show_guid:
-        return None
-
-    return f"{show_guid}:S{e['season']:02d}E{e['number']:02d}"
 
 
 
@@ -510,14 +463,6 @@ def exchange_code_for_simkl_tokens(code: str) -> Optional[dict]:
     logger.info("Simkl token obtained via authorization code")
     return data
 
-
-def simkl_request(
-    method: str, endpoint: str, headers: dict, **kwargs
-) -> requests.Response:
-    url = f"https://api.simkl.com{endpoint}"
-    resp = requests.request(method, url, headers=headers, timeout=30, **kwargs)
-    resp.raise_for_status()
-    return resp
 
 
 def trakt_request(
@@ -769,158 +714,6 @@ def update_trakt(
     )
 
 
-def get_simkl_history(
-    headers: dict,
-) -> Tuple[
-    Dict[str, Tuple[str, Optional[int], Optional[str]]],
-    Dict[str, Tuple[str, str, Optional[str]]],
-]:
-    """Return Simkl history keyed by IMDb, TMDb or TVDb GUID.
-
-    ``watched_at`` is included so items can be synced with the original
-    timestamp when possible.
-    """
-    movies: Dict[str, Tuple[str, Optional[int], Optional[str]]] = {}
-    episodes: Dict[str, Tuple[str, str, Optional[str]]] = {}
-
-    logger.info("Fetching Simkl history…")
-    resp = simkl_request(
-        "GET",
-        "/sync/all-items",
-        headers,
-        params={"extended": "full", "episode_watched_at": "yes"},
-    )
-    data = resp.json()
-    # Avoid logging the full API response to prevent cluttering logs
-    logger.debug("Simkl history retrieved from API")
-    if data is None:
-        data = {}
-    if not isinstance(data, dict):
-        logger.error("Unexpected Simkl history format: %r", data)
-        return movies, episodes
-
-    for m in data.get("movies", []):
-        movie_data = m.get("movie", m)  # fallback for legacy format
-        watched_at = m.get("last_watched_at") or m.get("watched_at")
-        guid = simkl_movie_guid(movie_data)
-        if guid and guid not in movies:
-            movies[guid] = (
-                movie_data.get("title", ""),
-                normalize_year(movie_data.get("year")),
-                watched_at,
-            )
-
-    for show in data.get("shows", []):
-        show_data = show.get("show", show)  # fallback for legacy format
-        title = show_data.get("title", "")
-        
-        for season in show.get("seasons", []):
-            s_num = season.get("number")
-            if s_num is None:
-                continue  # Skip seasons without valid numbers
-                
-            for ep in season.get("episodes", []):
-                watched_at = ep.get("watched_at")
-                ep_num = ep.get("number")
-                
-                if ep_num is None:
-                    continue  # Skip episodes without valid numbers
-                
-                # Create episode object with season and number for the key function
-                episode_obj = {
-                    "season": s_num,
-                    "number": ep_num,
-                    "ids": ep.get("ids", {}),  # Include episode-specific IDs if available
-                }
-                
-                # Generate unique episode identifier preferring IMDb, then TMDb
-                # and finally TVDb
-                ep_guid = simkl_episode_key(show, episode_obj)
-                if not ep_guid:
-                    continue  # Skip episodes without usable IDs
-                if ep_guid not in episodes:
-                    episodes[ep_guid] = (
-                        title,
-                        f"S{s_num:02d}E{ep_num:02d}",
-                        watched_at,
-                    )
-
-    return movies, episodes
-
-
-def update_simkl(
-    headers: dict,
-    movies: List[Tuple[str, Optional[int], Optional[str], Optional[str]]],
-    episodes: List[Tuple[str, str, Optional[str], Optional[str]]],
-) -> None:
-    payload = {"movies": [], "shows": []}
-    shows_payload: Dict[str, dict] = {}
-
-    for title, year, watched_at, guid in movies:
-        if not valid_guid(guid):
-            continue
-        movie_obj = {"title": title, "status": "completed"}
-        if year is not None:
-            movie_obj["year"] = year
-        movie_ids = guid_to_ids(guid)
-        if movie_ids:
-            movie_obj["ids"] = movie_ids
-        if watched_at:
-            movie_obj["watched_at"] = watched_at
-        payload["movies"].append(movie_obj)
-
-    for show, code, watched_at, guid in episodes:
-        if not valid_guid(guid):
-            continue
-        season_num = int(code[1:3])
-        ep_num = int(code[4:6])
-        show_obj = get_show_from_library(plex, show)
-        show_guid = best_guid(show_obj) if show_obj else None
-        key = show_guid if show_guid else show
-
-        show_entry = shows_payload.get(key)
-        if not show_entry:
-            show_entry = {"seasons": [], "status": "completed"}
-            if show_guid:
-                ids = guid_to_ids(show_guid)
-                if ids:
-                    show_entry["ids"] = ids
-            else:
-                show_entry["title"] = show
-            shows_payload[key] = show_entry
-
-        season_entry = next((s for s in show_entry["seasons"] if s["number"] == season_num), None)
-        if not season_entry:
-            season_entry = {"number": season_num, "episodes": []}
-            show_entry["seasons"].append(season_entry)
-
-        ep_obj = {"number": ep_num}
-        ep_ids = guid_to_ids(guid)
-        if ep_ids:
-            ep_obj["ids"] = ep_ids
-        if watched_at:
-            ep_obj["watched_at"] = watched_at
-        season_entry["episodes"].append(ep_obj)
-
-
-
-    if not payload["movies"] and not shows_payload:
-        logger.info("Nothing new to send to Simkl.")
-        return
-
-    payload["shows"] = list(shows_payload.values())
-
-    simkl_request("POST", "/sync/history", headers, json=payload)
-    episode_count = sum(
-        len(season.get("episodes", []))
-        for show in payload["shows"]
-        for season in show.get("seasons", [])
-    )
-    logger.info(
-        "Sent %d movies and %d episodes to Simkl",
-        len(payload["movies"]),
-        episode_count,
-    )
 
 
 def update_plex(
@@ -1349,132 +1142,6 @@ def sync_watchlist(plex, headers, plex_history, trakt_history):
         logger.info("Removed %d items from Trakt watchlist", len(remove))
 
 
-def sync_simkl_library(plex, headers):
-    """Add Plex movies and shows to Simkl as completed history."""
-    movies = []
-    shows = []
-    for section in plex.library.sections():
-        if section.type == "movie":
-            for item in section.all():
-                m = {"title": item.title, "status": "completed"}
-                if getattr(item, "year", None):
-                    m["year"] = normalize_year(item.year)
-                guid = best_guid(item)
-                if guid:
-                    m["ids"] = guid_to_ids(guid)
-                movies.append(m)
-        elif section.type == "show":
-            for item in section.all():
-                s = {"title": item.title, "status": "completed"}
-                if getattr(item, "year", None):
-                    s["year"] = normalize_year(item.year)
-                guid = best_guid(item)
-                if guid:
-                    s["ids"] = guid_to_ids(guid)
-                shows.append(s)
-    payload = {}
-    if movies:
-        payload["movies"] = movies
-    if shows:
-        payload["shows"] = shows
-    if payload:
-        try:
-            simkl_request("POST", "/sync/history", headers, json=payload)
-            logger.info(
-                "Synced %d Plex movies and %d shows to Simkl history",
-                len(movies),
-                len(shows),
-            )
-        except Exception as exc:
-            logger.error("Failed syncing library to Simkl: %s", exc)
-
-
-def sync_collections_to_simkl(plex, headers):
-    """Create or update Simkl lists from Plex collections."""
-    try:
-        user_data = simkl_request("GET", "/users/settings", headers).json()
-        username = (
-            user_data.get("user", {}).get("username")
-            or user_data.get("user", {}).get("ids", {}).get("slug")
-        )
-        resp = simkl_request("GET", f"/users/{username}/lists", headers)
-        lists = resp.json()
-        if not isinstance(lists, list):
-            logger.error("Unexpected response when fetching Simkl lists: %s", lists)
-            return
-    except Exception as exc:
-        logger.error("Failed to fetch Simkl lists: %s", exc)
-        return
-
-    slug_by_name = {l.get("name"): l.get("ids", {}).get("slug") for l in lists}
-
-    for sec in plex.library.sections():
-        if sec.type not in ("movie", "show"):
-            continue
-        for coll in sec.collections():
-            slug = slug_by_name.get(coll.title)
-            if not slug:
-                try:
-                    resp = simkl_request(
-                        "POST",
-                        f"/users/{username}/lists",
-                        headers,
-                        json={"name": coll.title},
-                    )
-                    slug = resp.json().get("ids", {}).get("slug")
-                    slug_by_name[coll.title] = slug
-                except Exception as exc:
-                    logger.error("Failed creating Simkl list %s: %s", coll.title, exc)
-                    continue
-            try:
-                items = simkl_request(
-                    "GET",
-                    f"/users/{username}/lists/{slug}/items",
-                    headers,
-                ).json()
-            except Exception as exc:
-                logger.error("Failed to fetch Simkl list %s items: %s", slug, exc)
-                continue
-            simkl_guids = set()
-            for it in items:
-                data = it.get(it["type"], {})
-                ids = data.get("ids", {})
-                if ids.get("imdb"):
-                    simkl_guids.add(f"imdb://{ids['imdb']}")
-                elif ids.get("tmdb"):
-                    simkl_guids.add(f"tmdb://{ids['tmdb']}")
-                elif ids.get("tvdb"):
-                    simkl_guids.add(f"tvdb://{ids['tvdb']}")
-            movies = []
-            shows = []
-            for item in coll.items():
-                guid = imdb_guid(item)
-                if not guid or guid in simkl_guids:
-                    continue
-                if item.type == "movie":
-                    movies.append({"ids": guid_to_ids(guid)})
-                elif item.type == "show":
-                    shows.append({"ids": guid_to_ids(guid)})
-            payload = {}
-            if movies:
-                payload["movies"] = movies
-            if shows:
-                payload["shows"] = shows
-            if payload:
-                try:
-                    simkl_request(
-                        "POST",
-                        f"/users/{username}/lists/{slug}/items",
-                        headers,
-                        json=payload,
-                    )
-                    logger.info(
-                        "Updated Simkl list %s with %d items",
-                        slug,
-                        len(movies) + len(shows),
-                    )
-                except Exception as exc:
-                    logger.error("Failed updating Simkl list %s: %s", slug, exc)
 
 
 # --------------------------------------------------------------------------- #
@@ -1488,16 +1155,12 @@ def sync():
     plex_token = os.environ.get("PLEX_TOKEN")
     trakt_token = os.environ.get("TRAKT_ACCESS_TOKEN")
     trakt_client_id = os.environ.get("TRAKT_CLIENT_ID")
-    simkl_token = os.environ.get("SIMKL_ACCESS_TOKEN")
-    simkl_client_id = os.environ.get("SIMKL_CLIENT_ID")
-
     trakt_enabled = SYNC_PROVIDER == "trakt" and bool(trakt_token and trakt_client_id)
-    simkl_enabled = SYNC_PROVIDER == "simkl" and bool(simkl_token and simkl_client_id)
 
     if not all([plex_baseurl, plex_token]):
         logger.error("Missing environment variables for Plex.")
         return
-    if not (trakt_enabled or simkl_enabled):
+    if not trakt_enabled:
         logger.error("Missing environment variables for selected provider.")
         return
 
@@ -1512,13 +1175,6 @@ def sync():
             "trakt-api-version": "2",
             "trakt-api-key": trakt_client_id,
         }
-    simkl_headers = None
-    if simkl_enabled:
-        simkl_headers = {
-            "Authorization": f"Bearer {simkl_token}",
-            "Content-Type": "application/json",
-            "simkl-api-key": simkl_client_id,
-        }
 
     if SYNC_COLLECTION and trakt_enabled:
         try:
@@ -1527,11 +1183,6 @@ def sync():
             logger.error("Collection sync skipped: %s", exc)
         except Exception as exc:  # noqa: BLE001
             logger.error("Collection sync failed: %s", exc)
-    if SYNC_COLLECTION and simkl_enabled:
-        try:
-            sync_simkl_library(plex, simkl_headers)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Simkl library sync failed: %s", exc)
     if SYNC_RATINGS and trakt_enabled:
         try:
             sync_ratings(plex, headers)
@@ -1559,19 +1210,6 @@ def sync():
         trakt_movie_guids = set()
         trakt_episode_guids = set()
 
-    if simkl_enabled:
-        try:
-            simkl_movies, simkl_episodes = get_simkl_history(simkl_headers)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Failed to retrieve Simkl history: %s", exc)
-            simkl_movies, simkl_episodes = {}, {}
-        simkl_movie_guids = set(simkl_movies.keys())
-        simkl_episode_guids = set(simkl_episodes.keys())
-    else:
-        simkl_movies, simkl_episodes = {}, {}
-        simkl_movie_guids = set()
-        simkl_episode_guids = set()
-
     logger.info(
         "Plex history:   %d movies, %d episodes",
         len(plex_movie_guids),
@@ -1583,22 +1221,16 @@ def sync():
             len(trakt_movie_guids),
             len(trakt_episode_guids),
         )
-    if simkl_enabled:
-        logger.info(
-            "Simkl history:  %d movies, %d episodes",
-            len(simkl_movie_guids),
-            len(simkl_episode_guids),
-        )
 
     new_movies = [
         (data["title"], data["year"], data["watched_at"], guid)
         for guid, data in plex_movies.items()
-        if guid not in trakt_movie_guids and guid not in simkl_movie_guids
+        if guid not in trakt_movie_guids
     ]
     new_episodes = [
         (data["show"], data["code"], data["watched_at"], guid)
         for guid, data in plex_episodes.items()
-        if guid not in trakt_episode_guids and guid not in simkl_episode_guids
+        if guid not in trakt_episode_guids
     ]
 
     # Permite desactivar la sync de vistos desde la interfaz
@@ -1606,10 +1238,8 @@ def sync():
         try:
             if trakt_enabled:
                 update_trakt(headers, new_movies, new_episodes)
-            if simkl_enabled:
-                update_simkl(simkl_headers, new_movies, new_episodes)
         except Exception as exc:  # noqa: BLE001
-            logger.error("Failed updating Trakt/Simkl history: %s", exc)
+            logger.error("Failed updating Trakt history: %s", exc)
     missing_movies = {
         (title, year, guid)
         for guid, (title, year, _watched) in trakt_movies.items()
@@ -1620,21 +1250,6 @@ def sync():
         for guid, (show, code, _watched) in trakt_episodes.items()
         if guid not in plex_episode_guids
     }
-    if simkl_enabled:
-        missing_movies.update(
-            {
-                (title, year, guid)
-                for guid, (title, year, _watched) in simkl_movies.items()
-                if guid not in plex_movie_guids
-            }
-        )
-        missing_episodes.update(
-            {
-                (show, code, guid)
-                for guid, (show, code, _watched) in simkl_episodes.items()
-                if guid not in plex_episode_guids
-            }
-        )
     try:
         update_plex(plex, missing_movies, missing_episodes)
     except Exception as exc:  # noqa: BLE001
@@ -1648,11 +1263,6 @@ def sync():
             logger.error("Liked-lists sync skipped: %s", exc)
         except Exception as exc:  # noqa: BLE001
             logger.error("Liked-lists sync failed: %s", exc)
-    if SYNC_LIKED_LISTS and simkl_enabled:
-        try:
-            sync_collections_to_simkl(plex, simkl_headers)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Simkl lists sync failed: %s", exc)
     if SYNC_WATCHLISTS and trakt_enabled:
         try:
             sync_watchlist(
@@ -2085,16 +1695,12 @@ def test_connections() -> bool:
     plex_token = os.environ.get("PLEX_TOKEN")
     trakt_token = os.environ.get("TRAKT_ACCESS_TOKEN")
     trakt_client_id = os.environ.get("TRAKT_CLIENT_ID")
-    simkl_token = os.environ.get("SIMKL_ACCESS_TOKEN")
-    simkl_client_id = os.environ.get("SIMKL_CLIENT_ID")
-
     trakt_enabled = SYNC_PROVIDER == "trakt" and bool(trakt_token and trakt_client_id)
-    simkl_enabled = SYNC_PROVIDER == "simkl" and bool(simkl_token and simkl_client_id)
 
     if not all([plex_baseurl, plex_token]):
         logger.error("Missing environment variables for Plex.")
         return False
-    if not (trakt_enabled or simkl_enabled):
+    if not trakt_enabled:
         logger.error("Missing environment variables for selected provider.")
         return False
 
@@ -2120,18 +1726,6 @@ def test_connections() -> bool:
             logger.error("Failed to connect to Trakt: %s", exc)
             return False
 
-    if simkl_enabled:
-        s_headers = {
-            "Authorization": f"Bearer {simkl_token}",
-            "Content-Type": "application/json",
-            "simkl-api-key": simkl_client_id,
-        }
-        try:
-            simkl_request("GET", "/sync/all-items", s_headers)
-            logger.info("Successfully connected to Simkl.")
-        except Exception as exc:
-            logger.error("Failed to connect to Simkl: %s", exc)
-            return False
 
     return True
 

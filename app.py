@@ -670,8 +670,9 @@ def get_simkl_history(
 def update_simkl(
     headers: dict,
     movies: List[Tuple[str, Optional[int], Optional[str], Optional[str]]],
+    episodes: List[Tuple[str, str, Optional[str], Optional[str]]],
 ) -> None:
-    payload = {"movies": []}
+    payload = {"movies": [], "shows": []}
 
     for title, year, watched_at, guid in movies:
         if not valid_guid(guid):
@@ -686,12 +687,40 @@ def update_simkl(
             movie_obj["watched_at"] = watched_at
         payload["movies"].append(movie_obj)
 
-    if not payload["movies"]:
+    shows: Dict[str, Dict[str, Union[str, List[dict]]]] = {}
+    for show, code, watched_at, guid in episodes:
+        if not valid_guid(guid):
+            continue
+        season_num = int(code[1:3])
+        episode_num = int(code[4:6])
+        show_obj = shows.setdefault(
+            guid,
+            {"title": show, "ids": guid_to_ids(guid), "seasons": {}},
+        )
+        seasons = show_obj["seasons"]
+        season_obj = seasons.setdefault(
+            season_num,
+            {"number": season_num, "episodes": []},
+        )
+        ep_data = {"number": episode_num}
+        if watched_at:
+            ep_data["watched_at"] = watched_at
+        season_obj["episodes"].append(ep_data)
+
+    for show_obj in shows.values():
+        show_obj["seasons"] = list(show_obj["seasons"].values())
+        payload["shows"].append(show_obj)
+
+    if not payload["movies"] and not payload["shows"]:
         logger.info("Nothing new to send to Simkl.")
         return
 
     simkl_request("POST", "/sync/history", headers, json=payload)
-    logger.info("Sent %d movies to Simkl", len(payload["movies"]))
+    logger.info(
+        "Sent %d movies and %d shows to Simkl",
+        len(payload["movies"]),
+        len(payload["shows"]),
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -1458,7 +1487,7 @@ def sync():
             if trakt_enabled:
                 update_trakt(headers, new_movies, new_episodes)
             elif simkl_enabled:
-                update_simkl(headers, new_movies)
+                update_simkl(headers, new_movies, new_episodes)
         except Exception as exc:  # noqa: BLE001
             logger.error("Failed updating provider history: %s", exc)
     missing_movies = {

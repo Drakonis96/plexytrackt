@@ -845,9 +845,10 @@ def update_simkl(
     movies: List[Tuple[str, Optional[int], Optional[str], Optional[str]]],
     episodes: List[Tuple[str, str, Optional[str], Optional[str]]],
 ) -> None:
-    payload = {"movies": [], "episodes": []}
+    payload = {"movies": [], "shows": []}
     list_movies = []
     list_shows: Dict[str, dict] = {}
+    shows_payload: Dict[str, dict] = {}
 
     for title, year, watched_at, guid in movies:
         movie_obj = {"title": title}
@@ -873,54 +874,71 @@ def update_simkl(
         list_movies.append(list_movie)
 
     for show, code, watched_at, guid in episodes:
-        season = int(code[1:3])
-        number = int(code[4:6])
-        ep_obj = {"season": season, "number": number}
+        season_num = int(code[1:3])
+        ep_num = int(code[4:6])
+        show_obj = get_show_from_library(plex, show)
+        show_guid = best_guid(show_obj) if show_obj else None
+        key = show_guid if show_guid else show
+
+        show_entry = shows_payload.get(key)
+        if not show_entry:
+            show_entry = {"seasons": []}
+            if show_guid:
+                ids = guid_to_ids(show_guid)
+                if ids:
+                    show_entry["ids"] = ids
+            else:
+                show_entry["title"] = show
+            shows_payload[key] = show_entry
+
+        season_entry = next((s for s in show_entry["seasons"] if s["number"] == season_num), None)
+        if not season_entry:
+            season_entry = {"number": season_num, "episodes": []}
+            show_entry["seasons"].append(season_entry)
+
+        ep_obj = {"number": ep_num}
         if guid:
             ep_ids = guid_to_ids(guid)
             if ep_ids:
                 ep_obj["ids"] = ep_ids
-        else:
-            show_obj = get_show_from_library(plex, show)
-            show_ids = guid_to_ids(best_guid(show_obj)) if show_obj else {}
-            if show_ids:
-                ep_obj["show"] = {"ids": show_ids}
-            else:
-                ep_obj["title"] = show
         if watched_at:
             ep_obj["watched_at"] = watched_at
-        payload["episodes"].append(ep_obj)
+        season_entry["episodes"].append(ep_obj)
 
-        show_obj = get_show_from_library(plex, show)
-        show_guid = best_guid(show_obj) if show_obj else None
-        key = show_guid if show_guid else show
         show_payload = list_shows.get(key)
         if not show_payload:
             show_payload = {"title": show, "to": "completed"}
             if show_obj and getattr(show_obj, "year", None):
                 show_payload["year"] = normalize_year(show_obj.year)
             if show_guid:
-                show_ids_payload = guid_to_ids(show_guid)
-                if show_ids_payload:
-                    show_payload["ids"] = show_ids_payload
+                ids_payload = guid_to_ids(show_guid)
+                if ids_payload:
+                    show_payload["ids"] = ids_payload
             if watched_at:
                 show_payload["watched_at"] = watched_at
             list_shows[key] = show_payload
         else:
             if watched_at and (
-                "watched_at" not in show_payload or watched_at > show_payload["watched_at"]
+                "watched_at" not in show_payload or watched_at > show_payload.get("watched_at", watched_at)
             ):
                 show_payload["watched_at"] = watched_at
 
-    if not payload["movies"] and not payload["episodes"]:
+    if not payload["movies"] and not shows_payload:
         logger.info("Nothing new to send to Simkl.")
         return
 
+    payload["shows"] = list(shows_payload.values())
+
     simkl_request("POST", "/sync/history", headers, json=payload)
+    episode_count = sum(
+        len(season.get("episodes", []))
+        for show in payload["shows"]
+        for season in show.get("seasons", [])
+    )
     logger.info(
         "Sent %d movies and %d episodes to Simkl",
         len(payload["movies"]),
-        len(payload["episodes"]),
+        episode_count,
     )
 
     if list_movies:

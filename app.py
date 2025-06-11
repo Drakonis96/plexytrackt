@@ -847,12 +847,10 @@ def update_simkl(
     episodes: List[Tuple[str, str, Optional[str], Optional[str]]],
 ) -> None:
     payload = {"movies": [], "shows": []}
-    list_movies = []
-    list_shows: Dict[str, dict] = {}
     shows_payload: Dict[str, dict] = {}
 
     for title, year, watched_at, guid in movies:
-        movie_obj = {"title": title}
+        movie_obj = {"title": title, "status": "completed"}
         if year is not None:
             movie_obj["year"] = year
         if guid:
@@ -863,17 +861,6 @@ def update_simkl(
             movie_obj["watched_at"] = watched_at
         payload["movies"].append(movie_obj)
 
-        list_movie = {"title": title, "to": "completed"}
-        if year is not None:
-            list_movie["year"] = year
-        if guid:
-            list_ids = guid_to_ids(guid)
-            if list_ids:
-                list_movie["ids"] = list_ids
-        if watched_at:
-            list_movie["watched_at"] = watched_at
-        list_movies.append(list_movie)
-
     for show, code, watched_at, guid in episodes:
         season_num = int(code[1:3])
         ep_num = int(code[4:6])
@@ -883,7 +870,7 @@ def update_simkl(
 
         show_entry = shows_payload.get(key)
         if not show_entry:
-            show_entry = {"seasons": []}
+            show_entry = {"seasons": [], "status": "completed"}
             if show_guid:
                 ids = guid_to_ids(show_guid)
                 if ids:
@@ -906,23 +893,7 @@ def update_simkl(
             ep_obj["watched_at"] = watched_at
         season_entry["episodes"].append(ep_obj)
 
-        show_payload = list_shows.get(key)
-        if not show_payload:
-            show_payload = {"title": show, "to": "completed"}
-            if show_obj and getattr(show_obj, "year", None):
-                show_payload["year"] = normalize_year(show_obj.year)
-            if show_guid:
-                ids_payload = guid_to_ids(show_guid)
-                if ids_payload:
-                    show_payload["ids"] = ids_payload
-            if watched_at:
-                show_payload["watched_at"] = watched_at
-            list_shows[key] = show_payload
-        else:
-            if watched_at and (
-                "watched_at" not in show_payload or watched_at > show_payload.get("watched_at", watched_at)
-            ):
-                show_payload["watched_at"] = watched_at
+
 
     if not payload["movies"] and not shows_payload:
         logger.info("Nothing new to send to Simkl.")
@@ -941,19 +912,6 @@ def update_simkl(
         len(payload["movies"]),
         episode_count,
     )
-
-    if list_movies:
-        simkl_request("POST", "/sync/my-movies", headers, json={"movies": list_movies})
-        logger.info("Marked %d movies as completed on Simkl", len(list_movies))
-
-    if list_shows:
-        simkl_request(
-            "POST",
-            "/sync/my-shows",
-            headers,
-            json={"shows": list(list_shows.values())},
-        )
-        logger.info("Marked %d shows as completed on Simkl", len(list_shows))
 
 
 def update_plex(
@@ -1407,13 +1365,13 @@ def sync_watchlist(plex, headers, plex_history, trakt_history):
 
 
 def sync_simkl_library(plex, headers):
-    """Add Plex movies and shows to Simkl My Movies and My TV Shows."""
+    """Add Plex movies and shows to Simkl as completed history."""
     movies = []
     shows = []
     for section in plex.library.sections():
         if section.type == "movie":
             for item in section.all():
-                m = {"title": item.title}
+                m = {"title": item.title, "status": "completed"}
                 if getattr(item, "year", None):
                     m["year"] = normalize_year(item.year)
                 guid = best_guid(item)
@@ -1422,25 +1380,28 @@ def sync_simkl_library(plex, headers):
                 movies.append(m)
         elif section.type == "show":
             for item in section.all():
-                s = {"title": item.title}
+                s = {"title": item.title, "status": "completed"}
                 if getattr(item, "year", None):
                     s["year"] = normalize_year(item.year)
                 guid = best_guid(item)
                 if guid:
                     s["ids"] = guid_to_ids(guid)
                 shows.append(s)
+    payload = {}
     if movies:
-        try:
-            simkl_request("POST", "/sync/my-movies", headers, json={"movies": movies})
-            logger.info("Synced %d Plex movies to Simkl My Movies", len(movies))
-        except Exception as exc:
-            logger.error("Failed syncing movies to Simkl: %s", exc)
+        payload["movies"] = movies
     if shows:
+        payload["shows"] = shows
+    if payload:
         try:
-            simkl_request("POST", "/sync/my-shows", headers, json={"shows": shows})
-            logger.info("Synced %d Plex shows to Simkl My TV Shows", len(shows))
+            simkl_request("POST", "/sync/history", headers, json=payload)
+            logger.info(
+                "Synced %d Plex movies and %d shows to Simkl history",
+                len(movies),
+                len(shows),
+            )
         except Exception as exc:
-            logger.error("Failed syncing shows to Simkl: %s", exc)
+            logger.error("Failed syncing library to Simkl: %s", exc)
 
 
 def sync_collections_to_simkl(plex, headers):

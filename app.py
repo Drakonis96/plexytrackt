@@ -777,7 +777,8 @@ def get_simkl_history(
         params={"extended": "full", "episode_watched_at": "yes"},
     )
     data = resp.json()
-    logger.info(f"Simkl API response: {data}")
+    # Avoid logging the full API response to prevent cluttering logs
+    logger.debug("Simkl history retrieved from API")
     if data is None:
         data = {}
     if not isinstance(data, dict):

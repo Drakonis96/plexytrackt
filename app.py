@@ -1800,6 +1800,9 @@ def test_connections() -> bool:
     trakt_token = os.environ.get("TRAKT_ACCESS_TOKEN")
     trakt_client_id = os.environ.get("TRAKT_CLIENT_ID")
     trakt_enabled = SYNC_PROVIDER == "trakt" and bool(trakt_token and trakt_client_id)
+    simkl_token = os.environ.get("SIMKL_ACCESS_TOKEN")
+    simkl_client_id = os.environ.get("SIMKL_CLIENT_ID")
+    simkl_enabled = SYNC_PROVIDER == "simkl" and bool(simkl_token and simkl_client_id)
 
     if not all([plex_baseurl, plex_token]):
         logger.error("Missing environment variables for Plex.")

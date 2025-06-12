@@ -41,6 +41,7 @@ If you want to remove saved tokens, the Config page also provides **Clear Config
 When specifying a custom redirect URI for either service, ensure the same
 value is configured in your Trakt or Simkl application and passed via the
 `TRAKT_REDIRECT_URI` or `SIMKL_REDIRECT_URI` environment variables.
+If PlexyTrack is accessed through a reverse proxy, add both `https` and `http` versions of the OAuth redirect URL to avoid failures. For example, use `https://example.com/oauth/trakt` and `http://example.com/oauth/trakt` and set the same when creating the Simkl application.
 
 The application uses `plexapi` version 4.15 or newer (but below 5).
 

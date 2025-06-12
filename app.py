@@ -30,6 +30,51 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from plexapi.server import PlexServer
 from plexapi.exceptions import BadRequest, NotFound
 
+from utils import (
+    to_iso_z,
+    normalize_year,
+    _parse_guid_value,
+    best_guid,
+    imdb_guid,
+    get_show_from_library,
+    find_item_by_guid,
+    ensure_collection,
+    movie_key,
+    guid_to_ids,
+    valid_guid,
+    trakt_movie_key,
+    episode_key,
+    trakt_episode_key,
+    simkl_episode_key,
+)
+from plex_utils import get_plex_history, update_plex
+from trakt_utils import (
+    load_trakt_tokens,
+    save_trakt_tokens,
+    exchange_code_for_tokens,
+    refresh_trakt_token,
+    trakt_request,
+    get_trakt_history,
+    update_trakt,
+    sync_collection,
+    sync_ratings,
+    sync_liked_lists,
+    sync_collections_to_trakt,
+    sync_watchlist,
+    fetch_trakt_history_full,
+    fetch_trakt_ratings,
+    fetch_trakt_watchlist,
+    restore_backup,
+)
+from simkl_utils import (
+    load_simkl_tokens,
+    save_simkl_token,
+    exchange_code_for_simkl_tokens,
+    simkl_request,
+    get_simkl_history,
+    update_simkl,
+)
+
 # --------------------------------------------------------------------------- #
 # LOGGING
 # --------------------------------------------------------------------------- #

@@ -913,7 +913,7 @@ def update_simkl(
             if not ids:
                 ids = simkl_search_ids(headers, title, is_movie=True, year=year)
                 if ids:
-                    logger.debug("IDs encontrados en Simkl para la película '%s': %s", title, ids)
+                    logger.debug("IDs found in Simkl for movie '%s': %s", title, ids)
             if ids:
                 item["ids"] = ids
             if watched_at:
@@ -928,10 +928,10 @@ def update_simkl(
             if not ids:
                 ids = simkl_search_ids(headers, show_title, is_movie=False)
                 if ids:
-                    logger.debug("IDs encontrados en Simkl para la serie '%s': %s", show_title, ids)
+                    logger.debug("IDs found in Simkl for show '%s': %s", show_title, ids)
             if not ids:
                 logger.warning(
-                    "Omitiendo episodio '%s - %s' (sin IDs encontrados)", show_title, code
+                    "Skipping episode '%s - %s' - no IDs found", show_title, code
                 )
                 continue
 
@@ -946,7 +946,7 @@ def update_simkl(
             try:
                 season_num, episode_num = map(int, code.upper().lstrip("S").split("E"))
             except ValueError:
-                logger.warning("Formato de episodio inválido: %s", code)
+                logger.warning("Invalid episode code format: %s", code)
                 continue
 
             season_found = False
@@ -967,11 +967,11 @@ def update_simkl(
             payload["shows"] = list(shows.values())
 
     if not payload:
-        logger.info("No hay ítems nuevos para sincronizar con Simkl")
+        logger.info("Nothing new to sync with Simkl")
         return
 
     logger.info(
-        "Añadiendo %d películas y %d series al historial de Simkl",
+        "Adding %d movies and %d shows to Simkl history",
         len(payload.get("movies", [])),
         len(payload.get("shows", [])),
     )
@@ -984,14 +984,14 @@ def update_simkl(
             try:
                 data = response.json()
                 if data.get("message") == "Success!":
-                    logger.info("Simkl devolvió 429 pero informó de éxito.")
+                    logger.info("Simkl returned 429 but reported success.")
                     return
             except json.JSONDecodeError:
                 pass  # no es JSON, continuar como error
         response.raise_for_status()
-        logger.info("Historial de Simkl actualizado correctamente.")
+        logger.info("Simkl history updated successfully.")
     except requests.exceptions.RequestException as e:
-        logger.error("Falló la actualización de Simkl: %s", e)
+        logger.error("Failed to update Simkl: %s", e)
 
 
 # --------------------------------------------------------------------------- #
@@ -1285,7 +1285,7 @@ def update_simkl(
             if not ids:
                 ids = simkl_search_ids(headers, title, is_movie=True, year=year)
                 if ids:
-                    logger.debug("IDs encontrados en Simkl para la película '%s': %s", title, ids)
+                    logger.debug("IDs found in Simkl for movie '%s': %s", title, ids)
             if ids:
                 item["ids"] = ids
             if watched_at:
@@ -1300,10 +1300,10 @@ def update_simkl(
             if not ids:
                 ids = simkl_search_ids(headers, show_title, is_movie=False)
                 if ids:
-                    logger.debug("IDs encontrados en Simkl para la serie '%s': %s", show_title, ids)
+                    logger.debug("IDs found in Simkl for show '%s': %s", show_title, ids)
             if not ids:
                 logger.warning(
-                    "Omitiendo episodio '%s - %s' (sin IDs encontrados)", show_title, code
+                    "Skipping episode '%s - %s' - no IDs found", show_title, code
                 )
                 continue
 
@@ -1318,7 +1318,7 @@ def update_simkl(
             try:
                 season_num, episode_num = map(int, code.upper().lstrip("S").split("E"))
             except ValueError:
-                logger.warning("Formato de episodio inválido: %s", code)
+                logger.warning("Invalid episode code format: %s", code)
                 continue
 
             season_found = False
@@ -1339,11 +1339,11 @@ def update_simkl(
             payload["shows"] = list(shows.values())
 
     if not payload:
-        logger.info("No hay ítems nuevos para sincronizar con Simkl")
+        logger.info("Nothing new to sync with Simkl")
         return
 
     logger.info(
-        "Añadiendo %d películas y %d series al historial de Simkl",
+        "Adding %d movies and %d shows to Simkl history",
         len(payload.get("movies", [])),
         len(payload.get("shows", [])),
     )
@@ -1356,14 +1356,14 @@ def update_simkl(
             try:
                 data = response.json()
                 if data.get("message") == "Success!":
-                    logger.info("Simkl devolvió 429 pero informó de éxito.")
+                    logger.info("Simkl returned 429 but reported success.")
                     return
             except json.JSONDecodeError:
                 pass  # no es JSON, continuar como error
         response.raise_for_status()
-        logger.info("Historial de Simkl actualizado correctamente.")
+        logger.info("Simkl history updated successfully.")
     except requests.exceptions.RequestException as e:
-        logger.error("Falló la actualización de Simkl: %s", e)
+        logger.error("Failed to update Simkl: %s", e)
 
 
 # --------------------------------------------------------------------------- #
@@ -1526,7 +1526,7 @@ def sync():
                     if show_obj:
                         show_guid = imdb_guid(show_obj) or best_guid(show_obj)
                 except Exception as exc:
-                    logger.debug("No se pudo obtener GUID de la serie %s: %s", show_title, exc)
+                    logger.debug("Failed to obtain GUID for show %s: %s", show_title, exc)
 
                 # Si seguimos sin GUID de serie, recurrimos al GUID del episodio como último recurso.
                 if show_guid is None:
@@ -1570,7 +1570,7 @@ def sync():
     if SYNC_RATINGS and SYNC_PROVIDER == "trakt":
         sync_ratings(plex, headers)
     elif SYNC_RATINGS and SYNC_PROVIDER == "simkl":
-        logger.warning("La sincronización de valoraciones con Simkl todavía no está soportada.")
+        logger.warning("Ratings sync with Simkl is not yet supported.")
 
     if SYNC_WATCHLISTS and SYNC_PROVIDER == "trakt":
         sync_watchlist(plex, headers, plex_movies, trakt_movies)

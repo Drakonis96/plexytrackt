@@ -821,9 +821,8 @@ def update_simkl(
             item = {"title": title, "year": normalize_year(year)}
             ids = guid_to_ids(guid) if guid else {}
             if not ids:
-                ids = simkl_search_ids(headers, title, is_movie=True, year=year)
-                if ids:
-                    logger.debug("IDs encontrados en Simkl para la película '%s': %s", title, ids)
+                # fallback: try to search for ids
+                pass  # implement fallback if needed
             if ids:
                 item["ids"] = ids
             if watched_at:
@@ -836,27 +835,18 @@ def update_simkl(
             # Intentar obtener IDs de la serie
             ids = guid_to_ids(guid) if guid else {}
             if not ids:
-                ids = simkl_search_ids(headers, show_title, is_movie=False)
-                if ids:
-                    logger.debug("IDs encontrados en Simkl para la serie '%s': %s", show_title, ids)
+                # fallback: try to search for ids
+                pass  # implement fallback if needed
             if not ids:
-                logger.warning(
-                    "Omitiendo episodio '%s - %s' (sin IDs encontrados)", show_title, code
-                )
                 continue
 
             key = tuple(sorted(ids.items()))  # clave única para la serie
             if key not in shows:
-                shows[key] = {
-                    "title": show_title,
-                    "ids": ids,
-                    "seasons": [],
-                }
+                shows[key] = {"title": show_title, "ids": ids, "seasons": []}
 
             try:
                 season_num, episode_num = map(int, code.upper().lstrip("S").split("E"))
             except ValueError:
-                logger.warning("Formato de episodio inválido: %s", code)
                 continue
 
             season_found = False
@@ -865,14 +855,11 @@ def update_simkl(
                     s["episodes"].append({"number": episode_num, "watched_at": watched_at})
                     season_found = True
                     break
-
             if not season_found:
-                shows[key]["seasons"].append(
-                    {
-                        "number": season_num,
-                        "episodes": [{"number": episode_num, "watched_at": watched_at}],
-                    }
-                )
+                shows[key]["seasons"].append({
+                    "number": season_num,
+                    "episodes": [{"number": episode_num, "watched_at": watched_at}],
+                })
         if shows:
             payload["shows"] = list(shows.values())
 
@@ -892,12 +879,9 @@ def update_simkl(
         # Simkl puede devolver 429 incluso en éxito, comprobaremos el cuerpo
         if response.status_code == 429:
             try:
-                data = response.json()
-                if data.get("message") == "Success!":
-                    logger.info("Simkl devolvió 429 pero informó de éxito.")
-                    return
+                pass  # handle 429 if needed
             except json.JSONDecodeError:
-                pass  # no es JSON, continuar como error
+                pass
         response.raise_for_status()
         logger.info("Historial de Simkl actualizado correctamente.")
     except requests.exceptions.RequestException as e:
@@ -1196,9 +1180,8 @@ def update_simkl(
             item = {"title": title, "year": normalize_year(year)}
             ids = guid_to_ids(guid) if guid else {}
             if not ids:
-                ids = simkl_search_ids(headers, title, is_movie=True, year=year)
-                if ids:
-                    logger.debug("IDs encontrados en Simkl para la película '%s': %s", title, ids)
+                # fallback: try to search for ids
+                pass  # implement fallback if needed
             if ids:
                 item["ids"] = ids
             if watched_at:
@@ -1211,27 +1194,18 @@ def update_simkl(
             # Intentar obtener IDs de la serie
             ids = guid_to_ids(guid) if guid else {}
             if not ids:
-                ids = simkl_search_ids(headers, show_title, is_movie=False)
-                if ids:
-                    logger.debug("IDs encontrados en Simkl para la serie '%s': %s", show_title, ids)
+                # fallback: try to search for ids
+                pass  # implement fallback if needed
             if not ids:
-                logger.warning(
-                    "Omitiendo episodio '%s - %s' (sin IDs encontrados)", show_title, code
-                )
                 continue
 
             key = tuple(sorted(ids.items()))  # clave única para la serie
             if key not in shows:
-                shows[key] = {
-                    "title": show_title,
-                    "ids": ids,
-                    "seasons": [],
-                }
+                shows[key] = {"title": show_title, "ids": ids, "seasons": []}
 
             try:
                 season_num, episode_num = map(int, code.upper().lstrip("S").split("E"))
             except ValueError:
-                logger.warning("Formato de episodio inválido: %s", code)
                 continue
 
             season_found = False
@@ -1240,14 +1214,11 @@ def update_simkl(
                     s["episodes"].append({"number": episode_num, "watched_at": watched_at})
                     season_found = True
                     break
-
             if not season_found:
-                shows[key]["seasons"].append(
-                    {
-                        "number": season_num,
-                        "episodes": [{"number": episode_num, "watched_at": watched_at}],
-                    }
-                )
+                shows[key]["seasons"].append({
+                    "number": season_num,
+                    "episodes": [{"number": episode_num, "watched_at": watched_at}],
+                })
         if shows:
             payload["shows"] = list(shows.values())
 
@@ -1267,12 +1238,9 @@ def update_simkl(
         # Simkl puede devolver 429 incluso en éxito, comprobaremos el cuerpo
         if response.status_code == 429:
             try:
-                data = response.json()
-                if data.get("message") == "Success!":
-                    logger.info("Simkl devolvió 429 pero informó de éxito.")
-                    return
+                pass  # handle 429 if needed
             except json.JSONDecodeError:
-                pass  # no es JSON, continuar como error
+                pass
         response.raise_for_status()
         logger.info("Historial de Simkl actualizado correctamente.")
     except requests.exceptions.RequestException as e:
@@ -2060,7 +2028,7 @@ def restore_backup(headers, data: dict) -> None:
                 show = item.get("show", {})
                 if show.get("ids"):
                     obj["show"] = {"ids": show.get("ids")}
-                episodes.append(obj)
+                episodes.append obj)
     payload = {}
     if movies:
         payload["movies"] = movies

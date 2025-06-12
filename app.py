@@ -30,50 +30,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from plexapi.server import PlexServer
 from plexapi.exceptions import BadRequest, NotFound
 
-from utils import (
-    to_iso_z,
-    normalize_year,
-    _parse_guid_value,
-    best_guid,
-    imdb_guid,
-    get_show_from_library,
-    find_item_by_guid,
-    ensure_collection,
-    movie_key,
-    guid_to_ids,
-    valid_guid,
-    trakt_movie_key,
-    episode_key,
-    trakt_episode_key,
-    simkl_episode_key,
-)
-from plex_utils import get_plex_history, update_plex
-from trakt_utils import (
-    load_trakt_tokens,
-    save_trakt_tokens,
-    exchange_code_for_tokens,
-    refresh_trakt_token,
-    trakt_request,
-    get_trakt_history,
-    update_trakt,
-    sync_collection,
-    sync_ratings,
-    sync_liked_lists,
-    sync_collections_to_trakt,
-    sync_watchlist,
-    fetch_trakt_history_full,
-    fetch_trakt_ratings,
-    fetch_trakt_watchlist,
-    restore_backup,
-)
-from simkl_utils import (
-    load_simkl_tokens,
-    save_simkl_token,
-    exchange_code_for_simkl_tokens,
-    simkl_request,
-    get_simkl_history,
-    update_simkl,
-)
+# Local helper functions (previously in separate modules)
 
 # --------------------------------------------------------------------------- #
 # LOGGING
@@ -1112,6 +1069,68 @@ def get_plex_history(plex) -> Tuple[
     return movies, episodes
 
 
+def get_trakt_history(
+    headers: dict,
+) -> Tuple[
+    Dict[str, Tuple[str, Optional[int], Optional[str]]],
+    Dict[str, Tuple[str, str, Optional[str]]],
+]:
+    """Return Trakt history keyed by IMDb, TMDb or TVDb GUIDs."""
+    movies: Dict[str, Tuple[str, Optional[int], Optional[str]]] = {}
+    episodes: Dict[str, Tuple[str, str, Optional[str]]] = {}
+
+    page = 1
+    logger.info("Fetching Trakt history…")
+    while True:
+        resp = trakt_request(
+            "GET",
+            "/sync/history",
+            headers,
+            params={"page": page, "limit": 100},
+        )
+        data = resp.json()
+        if not isinstance(data, list) or not data:
+            break
+        for item in data:
+            watched_at = item.get("watched_at")
+            if item["type"] == "movie":
+                m = item["movie"]
+                ids = m.get("ids", {})
+                guid = None
+                if ids.get("imdb"):
+                    guid = f"imdb://{ids['imdb']}"
+                elif ids.get("tmdb"):
+                    guid = f"tmdb://{ids['tmdb']}"
+                elif ids.get("tvdb"):
+                    guid = f"tvdb://{ids['tvdb']}"
+                if guid and guid not in movies:
+                    movies[guid] = (
+                        m.get("title"),
+                        normalize_year(m.get("year")),
+                        watched_at,
+                    )
+            elif item["type"] == "episode":
+                e = item["episode"]
+                show = item["show"]
+                ids = e.get("ids", {})
+                guid = None
+                if ids.get("imdb"):
+                    guid = f"imdb://{ids['imdb']}"
+                elif ids.get("tmdb"):
+                    guid = f"tmdb://{ids['tmdb']}"
+                elif ids.get("tvdb"):
+                    guid = f"tvdb://{ids['tvdb']}"
+                if guid and guid not in episodes:
+                    episodes[guid] = (
+                        show.get("title"),
+                        f"S{e['season']:02d}E{e['number']:02d}",
+                        watched_at,
+                    )
+        page += 1
+
+    return movies, episodes
+
+
 def update_trakt(
     headers: dict,
     movies: List[Tuple[str, Optional[int], Optional[str], Optional[str]]],
@@ -1700,6 +1719,104 @@ def sync_collections_to_trakt(plex, headers):
                     logger.error("Failed updating list %s: %s", slug, exc)
 
 
+def sync_watchlist(plex, headers, plex_history, trakt_history):
+    """Synchronize Plex and Trakt watchlists using GUIDs only."""
+    account = plex.myPlexAccount()
+    try:
+        plex_watch = account.watchlist()
+    except Exception as exc:
+        logger.error("Failed to fetch Plex watchlist: %s", exc)
+        plex_watch = []
+    try:
+        trakt_movies = trakt_request("GET", "/sync/watchlist/movies", headers).json()
+        trakt_shows = trakt_request("GET", "/sync/watchlist/shows", headers).json()
+    except Exception as exc:
+        logger.error("Failed to fetch Trakt watchlist: %s", exc)
+        return
+
+    plex_guids = {g for g in (imdb_guid(it) for it in plex_watch) if g}
+
+    trakt_guids = set()
+    for lst in (trakt_movies, trakt_shows):
+        for it in lst:
+            ids = it.get(it["type"], {}).get("ids", {})
+            if ids.get("imdb"):
+                trakt_guids.add(f"imdb://{ids['imdb']}")
+            elif ids.get("tmdb"):
+                trakt_guids.add(f"tmdb://{ids['tmdb']}")
+            elif ids.get("tvdb"):
+                trakt_guids.add(f"tvdb://{ids['tvdb']}")
+
+    movies_to_add = []
+    shows_to_add = []
+    for item in plex_watch:
+        guid = imdb_guid(item)
+        if not guid or guid in trakt_guids:
+            continue
+        data = guid_to_ids(guid)
+        if item.TYPE == "movie":
+            movies_to_add.append({"ids": data})
+        elif item.TYPE == "show":
+            shows_to_add.append({"ids": data})
+    payload = {}
+    if movies_to_add:
+        payload["movies"] = movies_to_add
+    if shows_to_add:
+        payload["shows"] = shows_to_add
+    if payload:
+        trakt_request("POST", "/sync/watchlist", headers, json=payload)
+        logger.info("Added %d items to Trakt watchlist", len(movies_to_add) + len(shows_to_add))
+
+    add_to_plex = []
+    for lst in (trakt_movies, trakt_shows):
+        for it in lst:
+            data = it.get(it["type"], {})
+            ids = data.get("ids", {})
+            guid = None
+            if ids.get("imdb"):
+                guid = f"imdb://{ids['imdb']}"
+            elif ids.get("tmdb"):
+                guid = f"tmdb://{ids['tmdb']}"
+            elif ids.get("tvdb"):
+                guid = f"tvdb://{ids['tvdb']}"
+            if not guid or guid in plex_guids:
+                continue
+            item = find_item_by_guid(plex, guid)
+            if item:
+                add_to_plex.append(item)
+    if add_to_plex:
+        try:
+            account.addToWatchlist(add_to_plex)
+            logger.info("Added %d items to Plex watchlist", len(add_to_plex))
+        except Exception as exc:
+            logger.error("Failed adding Plex watchlist items: %s", exc)
+
+    for guid in list(plex_guids):
+        if guid in trakt_history or guid in plex_history:
+            try:
+                item = find_item_by_guid(plex, guid)
+                if item:
+                    account.removeFromWatchlist([item])
+            except Exception:
+                pass
+    remove = []
+    for lst in (trakt_movies, trakt_shows):
+        for it in lst:
+            data = it.get(it["type"], {})
+            ids = data.get("ids", {})
+            guid = None
+            if ids.get("imdb"):
+                guid = f"imdb://{ids['imdb']}"
+            elif ids.get("tmdb"):
+                guid = f"tmdb://{ids['tmdb']}"
+            elif ids.get("tvdb"):
+                guid = f"tvdb://{ids['tvdb']}"
+            if guid and (guid in plex_history or guid in trakt_history) and guid not in plex_guids:
+                remove.append({"ids": guid_to_ids(guid)})
+    if remove:
+        trakt_request("POST", "/sync/watchlist/remove", headers, json={"movies": remove, "shows": remove})
+        logger.info("Removed %d items from Trakt watchlist", len(remove))
+
 
 
 
@@ -1793,6 +1910,11 @@ def sync():
             missing_episodes = {
                 (show, code, guid) for guid, (show, code) in trakt_episodes.items() if guid not in plex_episode_guids
             }
+            logger.info(
+                "Found %d movies and %d episodes to add to Plex",
+                len(missing_movies),
+                len(missing_episodes),
+            )
             try:
                 update_plex(plex, missing_movies, missing_episodes)
             except Exception as exc:  # noqa: BLE001

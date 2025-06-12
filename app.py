@@ -1910,6 +1910,11 @@ def sync():
             missing_episodes = {
                 (show, code, guid) for guid, (show, code) in trakt_episodes.items() if guid not in plex_episode_guids
             }
+            logger.info(
+                "Found %d movies and %d episodes to add to Plex",
+                len(missing_movies),
+                len(missing_episodes),
+            )
             try:
                 update_plex(plex, missing_movies, missing_episodes)
             except Exception as exc:  # noqa: BLE001

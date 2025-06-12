@@ -6,6 +6,19 @@
 
 This project synchronizes your Plex library with Trakt. Besides watched history it can optionally add items to your Trakt collection, sync ratings and watchlists, and now mirrors Trakt lists you like as Plex collections. Collections created in Plex will in turn appear as Trakt lists. A small Flask web interface lets you choose which features to enable and configure the sync interval. Items that are manually marked as watched in Plex are detected as well. The interface also includes a tool for creating backups of your history, watchlist and ratings.
 
+## Índice
+
+- [Disclaimer](#disclaimer)
+- [Requirements](#requirements)
+- [Collections and watchlists](#collections-and-watchlists)
+- [Backup and restore](#backup-and-restore)
+- [Live sync](#live-sync)
+- [Getting a Plex token](#getting-a-plex-token)
+- [Getting Trakt API credentials](#getting-trakt-api-credentials)
+- [Running with Docker Compose](#running-with-docker-compose)
+- [Screenshots](#screenshots)
+
+
 ## Disclaimer
 
 This application is currently in testing and is provided **as is**. I take no responsibility for any data loss that may occur when using it. Before you begin, you should use the backup tool to export your history, watchlist and ratings so they can be restored easily from the UI.

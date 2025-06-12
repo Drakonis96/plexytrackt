@@ -116,4 +116,16 @@ docker-compose -f docker-compose-local.yml up --build
 
 That's it! The container will continue to sync your Plex account with Trakt and/or Simkl according to the interval you set.
 
+## Screenshots
+
+Below are a few images of the PlexyTrack web interface.
+
+<p align="center">
+  <img src="screenshots/Screenshot%201.png" alt="Screenshot 1" width="400" />
+  <img src="screenshots/Screenshot%202.png" alt="Screenshot 2" width="400" />
+  <br />
+  <img src="screenshots/Screenshot%203.png" alt="Screenshot 3" width="400" />
+  <img src="screenshots/Screenshot%204.png" alt="Screenshot 4" width="400" />
+</p>
+
 

@@ -171,7 +171,7 @@ def update_simkl(headers: dict, movies: List[Tuple[str, Optional[int], Optional[
             if not ids:
                 ids = simkl_search_ids(headers, title, is_movie=True, year=year)
                 if ids:
-                    logger.debug("IDs encontrados en Simkl para la película '%s': %s", title, ids)
+                    logger.debug("IDs found in Simkl for movie '%s': %s", title, ids)
             if ids:
                 item["ids"] = ids
             if watched_at:
@@ -185,9 +185,9 @@ def update_simkl(headers: dict, movies: List[Tuple[str, Optional[int], Optional[
             if not ids:
                 ids = simkl_search_ids(headers, show_title, is_movie=False)
                 if ids:
-                    logger.debug("IDs encontrados en Simkl para la serie '%s': %s", show_title, ids)
+                    logger.debug("IDs found in Simkl for show '%s': %s", show_title, ids)
             if not ids:
-                logger.warning("Omitiendo episodio '%s - %s' (sin IDs encontrados)", show_title, code)
+                logger.warning("Skipping episode '%s - %s' - no IDs found", show_title, code)
                 continue
             key = tuple(sorted(ids.items()))
             if key not in shows:
@@ -195,7 +195,7 @@ def update_simkl(headers: dict, movies: List[Tuple[str, Optional[int], Optional[
             try:
                 season_num, episode_num = map(int, code.upper().lstrip("S").split("E"))
             except ValueError:
-                logger.warning("Formato de episodio inválido: %s", code)
+                logger.warning("Invalid episode code format: %s", code)
                 continue
             season_found = False
             for s in shows[key]["seasons"]:
@@ -209,12 +209,12 @@ def update_simkl(headers: dict, movies: List[Tuple[str, Optional[int], Optional[
             payload["shows"] = list(shows.values())
 
     if not payload:
-        logger.info("No hay ítems nuevos para sincronizar con Simkl")
+        logger.info("Nothing new to sync with Simkl")
         return
 
-    logger.info("Añadiendo %d películas y %d series al historial de Simkl", len(payload.get("movies", [])), len(payload.get("shows", [])))
+    logger.info("Adding %d movies and %d shows to Simkl history", len(payload.get("movies", [])), len(payload.get("shows", [])))
     try:
         simkl_request("post", "/sync/history", headers, json=payload)
-        logger.info("Historial de Simkl actualizado correctamente.")
+        logger.info("Simkl history updated successfully.")
     except requests.exceptions.RequestException as e:
-        logger.error("Falló la actualización de Simkl: %s", e)
+        logger.error("Failed to update Simkl: %s", e)

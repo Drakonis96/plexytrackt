@@ -1752,6 +1752,13 @@ def index():
         SYNC_LIKED_LISTS = request.form.get("liked_lists") is not None
         SYNC_WATCHLISTS = request.form.get("watchlists") is not None
         LIVE_SYNC = request.form.get("live_sync") is not None
+
+        if SYNC_PROVIDER == "simkl":
+            SYNC_COLLECTION = False
+            SYNC_RATINGS = False
+            SYNC_LIKED_LISTS = False
+            SYNC_WATCHLISTS = False
+            LIVE_SYNC = False
         
         # Only start scheduler when manually requested from sync tab
         start_scheduler()
@@ -1779,6 +1786,7 @@ def index():
         liked_lists=SYNC_LIKED_LISTS,
         watchlists=SYNC_WATCHLISTS,
         live_sync=LIVE_SYNC,
+        provider=SYNC_PROVIDER,
         message=message,
         mtype=mtype,
         next_run=next_run,

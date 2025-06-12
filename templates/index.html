@@ -34,11 +34,11 @@
                     <fieldset class="sync-options">
                         <legend>Sync Options</legend>
                         <div class="checkbox-group">
-                            <input type="checkbox" id="collection" name="collection" {% if collection %}checked{% endif %}>
+                            <input type="checkbox" id="collection" name="collection" {% if collection %}checked{% endif %} {% if provider == 'simkl' %}disabled{% endif %}>
                             <label for="collection">Collection</label>
                         </div>
                         <div class="checkbox-group">
-                            <input type="checkbox" id="ratings" name="ratings" {% if ratings %}checked{% endif %}>
+                            <input type="checkbox" id="ratings" name="ratings" {% if ratings %}checked{% endif %} {% if provider == 'simkl' %}disabled{% endif %}>
                             <label for="ratings">Ratings</label>
                         </div>
                         <div class="checkbox-group">
@@ -46,15 +46,15 @@
                             <label for="watched">Watched History</label>
                         </div>
                         <div class="checkbox-group">
-                            <input type="checkbox" id="liked_lists" name="liked_lists" {% if liked_lists %}checked{% endif %}>
+                            <input type="checkbox" id="liked_lists" name="liked_lists" {% if liked_lists %}checked{% endif %} {% if provider == 'simkl' %}disabled{% endif %}>
                             <label for="liked_lists">Liked Lists</label>
                         </div>
                         <div class="checkbox-group">
-                            <input type="checkbox" id="watchlists" name="watchlists" {% if watchlists %}checked{% endif %}>
+                            <input type="checkbox" id="watchlists" name="watchlists" {% if watchlists %}checked{% endif %} {% if provider == 'simkl' %}disabled{% endif %}>
                             <label for="watchlists">Watchlists</label>
                         </div>
                         <div class="checkbox-group">
-                            <input type="checkbox" id="live_sync" name="live_sync" {% if live_sync %}checked{% endif %}>
+                            <input type="checkbox" id="live_sync" name="live_sync" {% if live_sync %}checked{% endif %} {% if provider == 'simkl' %}disabled{% endif %}>
                             <label for="live_sync">Live Sync</label>
                         </div>
                     </fieldset>

@@ -170,6 +170,10 @@ body {
     margin-bottom: 0;
 }
 
+.checkbox-group input[type="checkbox"]:disabled + label {
+    color: #888;
+}
+
 /* Provider toggle */
 .provider-toggle {
     display: flex;

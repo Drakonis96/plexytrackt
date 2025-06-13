@@ -65,6 +65,9 @@ from trakt_utils import (
     fetch_trakt_ratings,
     fetch_trakt_watchlist,
     restore_backup,
+    load_trakt_last_sync_date,
+    save_trakt_last_sync_date,
+    get_trakt_last_activity,
 )
 from simkl_utils import (
     load_simkl_tokens,
@@ -1412,11 +1415,19 @@ def sync():
     try:
         if SYNC_PROVIDER == "trakt":
             logger.info("Provider: Trakt")
-            try:
-                trakt_movies, trakt_episodes = get_trakt_history(headers)
-            except Exception as exc:
-                logger.error("Failed to retrieve Trakt history: %s", exc)
-                trakt_movies, trakt_episodes = {{}}, {{}}
+            last_sync = load_trakt_last_sync_date()
+            current_activity = get_trakt_last_activity(headers)
+            if last_sync and current_activity and current_activity == last_sync:
+                logger.info("No new Trakt activity since %s", last_sync)
+                trakt_movies, trakt_episodes = {}, {}
+            else:
+                try:
+                    trakt_movies, trakt_episodes = get_trakt_history(
+                        headers, date_from=last_sync
+                    )
+                except Exception as exc:
+                    logger.error("Failed to retrieve Trakt history: %s", exc)
+                    trakt_movies, trakt_episodes = {}, {}
             plex_movie_guids = set(plex_movies.keys())
             plex_episode_guids = set(plex_episodes.keys())
             trakt_movie_guids = set(trakt_movies.keys())
@@ -1433,16 +1444,28 @@ def sync():
                 len(trakt_episode_guids),
             )
 
-            new_movies = [
-                (data["title"], data["year"], data["watched_at"], guid)
-                for guid, data in plex_movies.items()
-                if guid not in trakt_movie_guids
-            ]
-            new_episodes = [
-                (data["show"], data["code"], data["watched_at"], guid)
-                for guid, data in plex_episodes.items()
-                if guid not in trakt_episode_guids
-            ]
+            if last_sync:
+                new_movies = [
+                    (data["title"], data["year"], data.get("watched_at"), guid)
+                    for guid, data in plex_movies.items()
+                    if data.get("watched_at") and data["watched_at"] > last_sync
+                ]
+                new_episodes = [
+                    (data["show"], data["code"], data.get("watched_at"), guid)
+                    for guid, data in plex_episodes.items()
+                    if data.get("watched_at") and data["watched_at"] > last_sync
+                ]
+            else:
+                new_movies = [
+                    (data["title"], data["year"], data.get("watched_at"), guid)
+                    for guid, data in plex_movies.items()
+                    if guid not in trakt_movie_guids
+                ]
+                new_episodes = [
+                    (data["show"], data["code"], data.get("watched_at"), guid)
+                    for guid, data in plex_episodes.items()
+                    if guid not in trakt_episode_guids
+                ]
 
             if SYNC_WATCHED:
                 try:
@@ -1485,6 +1508,9 @@ def sync():
                     logger.error("Watchlist sync skipped: %s", exc)
                 except Exception as exc:
                     logger.error("Watchlist sync failed: %s", exc)
+
+            if current_activity:
+                save_trakt_last_sync_date(current_activity)
 
         elif SYNC_PROVIDER == "simkl":
             logger.info("Provider: Simkl")

@@ -768,6 +768,8 @@ def simkl_movie_key(m: dict) -> Optional[str]:
 
 def get_simkl_history(
     headers: dict,
+    *,
+    date_from: Optional[str] = None,
 ) -> Tuple[
     Dict[str, Tuple[str, Optional[int], Optional[str]]],
     Dict[str, Tuple[str, str, Optional[str]]],
@@ -783,14 +785,18 @@ def get_simkl_history(
     episodes: Dict[str, Tuple[str, str, Optional[str]]] = {}
     
     # First, get movies from sync/history (watched history)
+    params = {"limit": 100, "type": "movies"}
+    if date_from:
+        params["date_from"] = date_from
     page = 1
     logger.info("Fetching Simkl watch history…")
     while True:
+        params["page"] = page
         resp = simkl_request(
             "GET",
             "/sync/history",
             headers,
-            params={"page": page, "limit": 100, "type": "movies"},
+            params=params,
         )
         data = resp.json()
         if not isinstance(data, list) or not data:
@@ -809,14 +815,18 @@ def get_simkl_history(
         page += 1
     
     # Get episodes from sync/history
+    params = {"limit": 100, "type": "episodes"}
+    if date_from:
+        params["date_from"] = date_from
     page = 1
     logger.info("Fetching Simkl episode history…")
     while True:
+        params["page"] = page
         resp = simkl_request(
             "GET",
             "/sync/history",
             headers,
-            params={"page": page, "limit": 100, "type": "episodes"},
+            params=params,
         )
         data = resp.json()
         if not isinstance(data, list) or not data:
@@ -1163,13 +1173,13 @@ def get_plex_history(plex) -> Tuple[
     return movies, episodes
 
 
-def get_trakt_history(
+def get_trakt_history_basic(
     headers: dict,
 ) -> Tuple[
     Dict[str, Tuple[str, Optional[int]]],
     Dict[str, Tuple[str, str]],
 ]:
-    """Return Trakt history keyed by IMDb or TMDb GUID for movies and episodes."""
+    """Return Trakt history keyed by IMDb/TMDb GUID for movies and episodes."""
     movies: Dict[str, Tuple[str, Optional[int]]] = {}
     episodes: Dict[str, Tuple[str, str]] = {}
 

@@ -104,6 +104,13 @@ werkzeug_logger = logging.getLogger('werkzeug')
 werkzeug_logger.setLevel(logging.WARNING)
 
 # --------------------------------------------------------------------------- #
+# APPLICATION INFO
+# --------------------------------------------------------------------------- #
+APP_NAME = "PlexyTrack"
+APP_VERSION = "v0.2.6"
+USER_AGENT = f"{APP_NAME} / {APP_VERSION}"
+
+# --------------------------------------------------------------------------- #
 # FLASK + APSCHEDULER
 # --------------------------------------------------------------------------- #
 app = Flask(__name__)
@@ -502,7 +509,10 @@ def exchange_code_for_tokens(code: str) -> Optional[dict]:
     }
     try:
         resp = requests.post(
-            "https://api.trakt.tv/oauth/token", json=payload, timeout=30
+            "https://api.trakt.tv/oauth/token",
+            json=payload,
+            timeout=30,
+            headers={"User-Agent": USER_AGENT},
         )
         resp.raise_for_status()
     except Exception as exc:
@@ -534,7 +544,10 @@ def refresh_trakt_token() -> Optional[str]:
     }
     try:
         resp = requests.post(
-            "https://api.trakt.tv/oauth/token", json=payload, timeout=30
+            "https://api.trakt.tv/oauth/token",
+            json=payload,
+            timeout=30,
+            headers={"User-Agent": USER_AGENT},
         )
         resp.raise_for_status()
     except Exception as exc:
@@ -587,7 +600,10 @@ def exchange_code_for_simkl_tokens(code: str) -> Optional[dict]:
     }
     try:
         resp = requests.post(
-            "https://api.simkl.com/oauth/token", json=payload, timeout=30
+            "https://api.simkl.com/oauth/token",
+            json=payload,
+            timeout=30,
+            headers={"User-Agent": USER_AGENT},
         )
         resp.raise_for_status()
     except Exception as exc:
@@ -606,6 +622,9 @@ def trakt_request(
     method: str, endpoint: str, headers: dict, **kwargs
 ) -> requests.Response:
     url = f"https://api.trakt.tv{endpoint}"
+
+    headers.setdefault("User-Agent", USER_AGENT)
+
     resp = requests.request(method, url, headers=headers, timeout=30, **kwargs)
     if resp.status_code == 401:  # token expired
         new_token = refresh_trakt_token()
@@ -649,6 +668,8 @@ def simkl_request(
     """
 
     url = f"https://api.simkl.com{endpoint}"
+
+    headers.setdefault("User-Agent", USER_AGENT)
 
     # Extraer un timeout personalizado si viene en **kwargs** para mantener compatibilidad.
     if "timeout" in kwargs:
@@ -2004,7 +2025,7 @@ def download_backup():
     headers = {
         "Authorization": f"Bearer {trakt_token}",
         "Content-Type": "application/json",
-        "User-Agent": "PlexyTrackt/1.0.0",
+        "User-Agent": USER_AGENT,
         "trakt-api-version": "2",
         "trakt-api-key": trakt_client_id,
     }
@@ -2031,7 +2052,7 @@ def restore_backup_route():
     headers = {
         "Authorization": f"Bearer {trakt_token}",
         "Content-Type": "application/json",
-        "User-Agent": "PlexyTrackt/1.0.0",
+        "User-Agent": USER_AGENT,
         "trakt-api-version": "2",
         "trakt-api-key": trakt_client_id,
     }
@@ -2095,7 +2116,7 @@ def test_connections() -> bool:
         headers = {
             "Authorization": f"Bearer {trakt_token}",
             "Content-Type": "application/json",
-            "User-Agent": "PlexyTrackt/1.0.0",
+            "User-Agent": USER_AGENT,
             "trakt-api-version": "2",
             "trakt-api-key": trakt_client_id,
         }
@@ -2110,7 +2131,7 @@ def test_connections() -> bool:
         headers = {
             "Authorization": f"Bearer {simkl_token}",
             "Content-Type": "application/json",
-            "User-Agent": "PlexyTrackt/1.0.0",
+            "User-Agent": USER_AGENT,
             "simkl-api-key": simkl_client_id,
         }
         try:

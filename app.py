@@ -1485,12 +1485,12 @@ def sync():
 
             missing_movies = {
                 (title, year, guid)
-                for guid, (title, year) in trakt_movies.items()
+                for guid, (title, year, *_rest) in trakt_movies.items()
                 if guid not in plex_movie_guids
             }
             missing_episodes = {
                 (show, code, guid)
-                for guid, (show, code) in trakt_episodes.items()
+                for guid, (show, code, *_rest) in trakt_episodes.items()
                 if guid not in plex_episode_guids
             }
             try:

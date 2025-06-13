@@ -93,6 +93,13 @@ the application will trigger an immediate sync whenever an event is received.
 3. After saving the app you will see a **Client ID** and **Client Secret**. Keep them handy.
 4. Start PlexyTrack and open `http://localhost:5030` in your browser. From the **Config.** tab you can authorize PlexyTrack on Trakt. After authorizing, Trakt will redirect you to the **OAuth** tab where the code will appear automatically.
 
+## Getting Simkl API credentials
+
+1. Sign in to your Simkl account and visit <https://simkl.com/apps>.
+2. Click **Create new app**, provide any name and set the redirect URL to match `http://localhost:5030/oauth/simkl` or your `SIMKL_REDIRECT_URI`.
+3. After saving the app you will see a **Client ID** and **Client Secret**. Keep them handy.
+4. Open PlexyTrack and from the **Config.** tab choose **Configure** under Simkl to authorize the app.
+
 
 ## Running with Docker Compose
 

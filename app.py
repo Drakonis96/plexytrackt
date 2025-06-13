@@ -27,6 +27,7 @@ from flask import (
 )
 from flask import send_file
 from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.schedulers.base import STATE_STOPPED
 from plexapi.server import PlexServer
 from plexapi.exceptions import BadRequest, NotFound
 
@@ -2153,6 +2154,10 @@ def start_scheduler():
     2. Antes de añadir el nuevo trabajo se eliminan TODOS los jobs existentes
        para evitar duplicados.
     """
+    global scheduler
+    # Recreate scheduler if it was shut down previously
+    if scheduler.state == STATE_STOPPED:
+        scheduler = BackgroundScheduler()
     # Iniciamos el scheduler si no está corriendo todavía
     if not scheduler.running:
         if not test_connections():
@@ -2179,11 +2184,13 @@ def start_scheduler():
 
 def stop_scheduler():
     """Detiene y elimina el job de sincronización dejando el scheduler limpio."""
+    global scheduler
     for job in scheduler.get_jobs():
         scheduler.remove_job(job.id)
     if scheduler.running and not scheduler.get_jobs():
         # Si no quedan trabajos activos podemos apagar el scheduler
         scheduler.shutdown(wait=False)
+        scheduler = BackgroundScheduler()
     logger.info("Synchronization job(s) stopped")
 
 

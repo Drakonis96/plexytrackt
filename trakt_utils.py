@@ -12,6 +12,7 @@ from utils import guid_to_ids, normalize_year, to_iso_z, valid_guid, best_guid, 
 logger = logging.getLogger(__name__)
 
 TOKEN_FILE = "trakt_tokens.json"
+TRAKT_LAST_SYNC_FILE = "trakt_last_sync.txt"
 
 
 def load_trakt_tokens() -> None:
@@ -35,6 +36,39 @@ def save_trakt_tokens(access_token: str, refresh_token: Optional[str]) -> None:
         logger.info("Saved Trakt tokens to %s", TOKEN_FILE)
     except Exception as exc:
         logger.error("Failed to save Trakt tokens: %s", exc)
+
+
+def load_trakt_last_sync_date() -> Optional[str]:
+    """Return the stored last sync date for Trakt."""
+    if os.path.exists(TRAKT_LAST_SYNC_FILE):
+        try:
+            with open(TRAKT_LAST_SYNC_FILE, "r", encoding="utf-8") as f:
+                return f.read().strip() or None
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed to load Trakt last sync date: %s", exc)
+    return None
+
+
+def save_trakt_last_sync_date(date_str: str) -> None:
+    """Persist ``date_str`` to :data:`TRAKT_LAST_SYNC_FILE`."""
+    try:
+        with open(TRAKT_LAST_SYNC_FILE, "w", encoding="utf-8") as f:
+            f.write(date_str)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Failed to save Trakt last sync date: %s", exc)
+
+
+def get_trakt_last_activity(headers: dict) -> Optional[str]:
+    """Return the latest ``all`` activity timestamp from Trakt."""
+    try:
+        resp = trakt_request("GET", "/sync/last_activities", headers)
+        data = resp.json()
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Failed to retrieve Trakt last activities: %s", exc)
+        return None
+    if isinstance(data, dict):
+        return data.get("all")
+    return None
 
 
 def get_trakt_redirect_uri() -> str:
@@ -145,7 +179,11 @@ def trakt_request(method: str, endpoint: str, headers: dict, **kwargs) -> reques
     return resp
 
 
-def get_trakt_history(headers: dict) -> Tuple[
+def get_trakt_history(
+    headers: dict,
+    *,
+    date_from: Optional[str] = None,
+) -> Tuple[
     Dict[str, Tuple[str, Optional[int], Optional[str]]],
     Dict[str, Tuple[str, str, Optional[str]]],
 ]:
@@ -154,8 +192,12 @@ def get_trakt_history(headers: dict) -> Tuple[
 
     page = 1
     logger.info("Fetching Trakt history…")
+    params = {"page": page, "limit": 100}
+    if date_from:
+        params["start_at"] = date_from
     while True:
-        resp = trakt_request("GET", "/sync/history", headers, params={"page": page, "limit": 100})
+        params["page"] = page
+        resp = trakt_request("GET", "/sync/history", headers, params=params)
         data = resp.json()
         if not isinstance(data, list) or not data:
             break

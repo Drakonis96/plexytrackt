@@ -5,6 +5,7 @@
 </p>
 
 This project synchronizes your Plex library with Trakt. Besides watched history it can optionally add items to your Trakt collection, sync ratings and watchlists, and now mirrors Trakt lists you like as Plex collections. Collections created in Plex will in turn appear as Trakt lists. A small Flask web interface lets you choose which features to enable and configure the sync interval. Items that are manually marked as watched in Plex are detected as well. The interface also includes a tool for creating backups of your history, watchlist and ratings.
+The recommended sync interval is **at least 60 minutes**. Shorter intervals generally do not provide any benefit, and you can even synchronize once every 24 hours to reduce the load on your server and the API.
 
 ## CONTENTS
 
@@ -126,6 +127,8 @@ docker-compose -f docker-compose-local.yml up --build
 ```
 
 4. Visit `http://localhost:5030` in your browser. You can adjust the sync interval on the page and also stop the synchronization job at any time using the **Stop Sync** button. The background job starts automatically when the container is running.
+
+   A sync interval of **at least 60 minutes is recommended**. Shorter intervals are generally unnecessary, and you can even schedule the job every 24 hours to reduce the load on your server and the Trakt or Simkl API.
 
 That's it! The container will continue to sync your Plex account with Trakt and/or Simkl according to the interval you set.
 

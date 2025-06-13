@@ -73,6 +73,9 @@ from simkl_utils import (
     simkl_request,
     get_simkl_history,
     update_simkl,
+    load_last_sync_date,
+    save_last_sync_date,
+    get_last_activity,
 )
 
 # --------------------------------------------------------------------------- #
@@ -1485,16 +1488,34 @@ def sync():
 
         elif SYNC_PROVIDER == "simkl":
             logger.info("Provider: Simkl")
-            simkl_movies, simkl_episodes = get_simkl_history(headers)
-            logger.info(
-                "Found %d movies and %d episodes in Simkl history.",
-                len(simkl_movies),
-                len(simkl_episodes),
-            )
+            last_sync = load_last_sync_date()
+            current_activity = get_last_activity(headers)
+            if last_sync and current_activity and current_activity == last_sync:
+                logger.info("No new Simkl activity since %s", last_sync)
+                simkl_movies, simkl_episodes = {}, {}
+            else:
+                simkl_movies, simkl_episodes = get_simkl_history(
+                    headers, date_from=last_sync
+                )
+                logger.info(
+                    "Retrieved %d movies and %d episodes from Simkl",
+                    len(simkl_movies),
+                    len(simkl_episodes),
+                )
 
             # Plex -> Simkl
-            movies_to_add = set(plex_movies) - set(simkl_movies)
-            episodes_to_add = set(plex_episodes) - set(simkl_episodes)
+            if last_sync:
+                movies_to_add = {
+                    k for k, v in plex_movies.items()
+                    if v.get("watched_at") and v["watched_at"] > last_sync
+                }
+                episodes_to_add = {
+                    k for k, v in plex_episodes.items()
+                    if v.get("watched_at") and v["watched_at"] > last_sync
+                }
+            else:
+                movies_to_add = set(plex_movies)
+                episodes_to_add = set(plex_episodes)
 
             logger.info(
                 "Found %d movies and %d episodes to add to Simkl",
@@ -1562,6 +1583,9 @@ def sync():
             }
             if movies_to_add_plex_fmt or episodes_to_add_plex_fmt:
                 update_plex(plex, movies_to_add_plex_fmt, episodes_to_add_plex_fmt)
+
+            if current_activity:
+                save_last_sync_date(current_activity)
 
     except Exception as exc:  # noqa: BLE001
         logger.error("Error during sync: %s", exc)

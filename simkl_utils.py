@@ -10,6 +10,7 @@ from utils import guid_to_ids, normalize_year, simkl_episode_key, to_iso_z
 logger = logging.getLogger(__name__)
 
 SIMKL_TOKEN_FILE = "simkl_tokens.json"
+SIMKL_LAST_SYNC_FILE = "simkl_last_sync.txt"
 
 
 def load_simkl_tokens() -> None:
@@ -32,6 +33,39 @@ def save_simkl_token(access_token: str) -> None:
         logger.info("Saved Simkl token to %s", SIMKL_TOKEN_FILE)
     except Exception as exc:
         logger.error("Failed to save Simkl token: %s", exc)
+
+
+def load_last_sync_date() -> Optional[str]:
+    """Return the stored last sync date for Simkl."""
+    if os.path.exists(SIMKL_LAST_SYNC_FILE):
+        try:
+            with open(SIMKL_LAST_SYNC_FILE, "r", encoding="utf-8") as f:
+                return f.read().strip() or None
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed to load Simkl last sync date: %s", exc)
+    return None
+
+
+def save_last_sync_date(date_str: str) -> None:
+    """Persist ``date_str`` to :data:`SIMKL_LAST_SYNC_FILE`."""
+    try:
+        with open(SIMKL_LAST_SYNC_FILE, "w", encoding="utf-8") as f:
+            f.write(date_str)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Failed to save Simkl last sync date: %s", exc)
+
+
+def get_last_activity(headers: dict) -> Optional[str]:
+    """Return the latest ``all`` activity timestamp from Simkl."""
+    try:
+        resp = simkl_request("POST", "/sync/activities", headers)
+        data = resp.json()
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Failed to retrieve Simkl activities: %s", exc)
+        return None
+    if isinstance(data, dict):
+        return data.get("all")
+    return None
 
 
 def exchange_code_for_simkl_tokens(code: str, redirect_uri: str) -> Optional[dict]:
@@ -121,14 +155,23 @@ def simkl_movie_key(m: dict) -> Optional[str]:
     return None
 
 
-def get_simkl_history(headers: dict) -> Tuple[Dict[str, Tuple[str, Optional[int], Optional[str]]], Dict[str, Tuple[str, str, Optional[str]]]]:
+def get_simkl_history(
+    headers: dict, *, date_from: Optional[str] = None
+) -> Tuple[
+    Dict[str, Tuple[str, Optional[int], Optional[str]]],
+    Dict[str, Tuple[str, str, Optional[str]]],
+]:
     movies: Dict[str, Tuple[str, Optional[int], Optional[str]]] = {}
     episodes: Dict[str, Tuple[str, str, Optional[str]]] = {}
 
+    params = {"limit": 100, "type": "movies"}
+    if date_from:
+        params["date_from"] = date_from
     page = 1
     logger.info("Fetching Simkl watch history…")
     while True:
-        resp = simkl_request("GET", "/sync/history", headers, params={"page": page, "limit": 100, "type": "movies"})
+        params["page"] = page
+        resp = simkl_request("GET", "/sync/history", headers, params=params)
         data = resp.json()
         if not isinstance(data, list) or not data:
             break
@@ -141,10 +184,14 @@ def get_simkl_history(headers: dict) -> Tuple[Dict[str, Tuple[str, Optional[int]
                 movies[guid] = (m.get("title"), normalize_year(m.get("year")), item.get("watched_at"))
         page += 1
 
+    params = {"limit": 100, "type": "episodes"}
+    if date_from:
+        params["date_from"] = date_from
     page = 1
     logger.info("Fetching Simkl episode history…")
     while True:
-        resp = simkl_request("GET", "/sync/history", headers, params={"page": page, "limit": 100, "type": "episodes"})
+        params["page"] = page
+        resp = simkl_request("GET", "/sync/history", headers, params=params)
         data = resp.json()
         if not isinstance(data, list) or not data:
             break

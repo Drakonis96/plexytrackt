@@ -11,6 +11,10 @@ from utils import guid_to_ids, normalize_year, to_iso_z, valid_guid, best_guid, 
 
 logger = logging.getLogger(__name__)
 
+APP_NAME = "PlexyTrack"
+APP_VERSION = "v0.2.6"
+USER_AGENT = f"{APP_NAME} / {APP_VERSION}"
+
 TOKEN_FILE = "trakt_tokens.json"
 TRAKT_LAST_SYNC_FILE = "trakt_last_sync.txt"
 
@@ -154,6 +158,9 @@ def refresh_trakt_token(redirect_uri: str) -> Optional[str]:
 
 def trakt_request(method: str, endpoint: str, headers: dict, **kwargs) -> requests.Response:
     url = f"https://api.trakt.tv{endpoint}"
+
+    headers.setdefault("User-Agent", USER_AGENT)
+
     resp = requests.request(method, url, headers=headers, timeout=30, **kwargs)
     if resp.status_code == 401:
         new_token = refresh_trakt_token(headers.get("redirect_uri", ""))

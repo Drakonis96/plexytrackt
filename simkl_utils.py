@@ -9,6 +9,10 @@ from utils import guid_to_ids, normalize_year, simkl_episode_key, to_iso_z
 
 logger = logging.getLogger(__name__)
 
+APP_NAME = "PlexyTrack"
+APP_VERSION = "v0.2.6"
+USER_AGENT = f"{APP_NAME} / {APP_VERSION}"
+
 SIMKL_TOKEN_FILE = "simkl_tokens.json"
 SIMKL_LAST_SYNC_FILE = "simkl_last_sync.txt"
 
@@ -98,6 +102,9 @@ def exchange_code_for_simkl_tokens(code: str, redirect_uri: str) -> Optional[dic
 
 def simkl_request(method: str, endpoint: str, headers: dict, *, retries: int = 2, timeout: int = 30, **kwargs) -> requests.Response:
     url = f"https://api.simkl.com{endpoint}"
+
+    headers.setdefault("User-Agent", USER_AGENT)
+
     if "timeout" in kwargs:
         timeout = kwargs.pop("timeout")
     attempt = 0

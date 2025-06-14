@@ -805,110 +805,49 @@ def get_simkl_history(
     """
     movies: Dict[str, Tuple[str, Optional[int], Optional[str]]] = {}
     episodes: Dict[str, Tuple[str, str, Optional[str]]] = {}
-    
-    # First, get movies from sync/history (watched history)
-    params = {"type": "movies"}
+
+    params = {"extended": "full", "episode_watched_at": "yes"}
     if date_from:
         params["date_from"] = date_from
-    logger.info("Fetching Simkl watch history…")
-    resp = simkl_request(
-        "GET",
-        "/sync/history",
-        headers,
-        params=params,
-    )
-    data = resp.json()
-    if isinstance(data, list):
-        for item in data:
-            m = item.get("movie", {})
-            guid = simkl_movie_key(m)
-            if not guid:
-                continue
-            if guid not in movies:
-                movies[guid] = (
-                    m.get("title"),
-                    normalize_year(m.get("year")),
-                    item.get("watched_at"),
-                )
-    
-    # Get episodes from sync/history
-    params = {"type": "episodes"}
-    if date_from:
-        params["date_from"] = date_from
-    logger.info("Fetching Simkl episode history…")
-    resp = simkl_request(
-        "GET",
-        "/sync/history",
-        headers,
-        params=params,
-    )
-    data = resp.json()
-    if isinstance(data, list):
-        for item in data:
-            e = item.get("episode", {})
-            show = item.get("show", {})
-            guid = simkl_episode_key(show, e)
-            if not guid:
-                continue
-            if guid not in episodes:
-                episodes[guid] = (
-                    show.get("title"),
-                    f"S{e.get('season', 0):02d}E{e.get('number', 0):02d}",
-                    item.get("watched_at"),
-                )
-    
-    # Then, get movies from sync/all-items to include completed movies
-    logger.info("Fetching Simkl all-items (full)…")
-    resp = simkl_request(
-        "GET",
-        "/sync/all-items",
-        headers,
-        params={"extended": "full", "episode_watched_at": "yes"},
-    )
+
+    logger.info("Fetching Simkl watched items…")
+    resp = simkl_request("GET", "/sync/all-items", headers, params=params)
     data = resp.json()
     if data and isinstance(data, dict):
-        completed_movies = data.get("movies", [])
-        for movie_item in completed_movies:
+        for movie_item in data.get("movies", []):
             m = movie_item.get("movie", {})
             guid = simkl_movie_key(m)
             if not guid:
                 continue
+            if not (
+                movie_item.get("last_watched_at")
+                or movie_item.get("plays", 0) > 0
+                or movie_item.get("watched")
+            ):
+                continue
             if guid not in movies:
-                # For completed movies, use last_watched_at if available
-                watched_at = movie_item.get("last_watched_at")
                 movies[guid] = (
                     m.get("title"),
                     normalize_year(m.get("year")),
-                    watched_at,
+                    movie_item.get("last_watched_at"),
                 )
-        
-        # Get completed episodes from shows in all-items
-        completed_shows = data.get("shows", [])
-        for show_item in completed_shows:
+
+        for show_item in data.get("shows", []):
             show = show_item.get("show", {})
             seasons = show_item.get("seasons", [])
             for season in seasons:
                 season_num = season.get("number", 0)
-                season_episodes = season.get("episodes", [])
-                for episode in season_episodes:
-                    # Determinar si el episodio está visto:
-                    # 1. Si viene `watched_at`, asumimos visto.
-                    # 2. Si no, usamos la métrica `plays` (reproducido ≥1).
-                    # 3. Si tampoco hay `plays`, comprobamos `watched` (bool).
+                for episode in season.get("episodes", []):
                     if not (
                         episode.get("watched_at")
                         or episode.get("plays", 0) > 0
                         or episode.get("watched")
                     ):
-                        # No hay indicios de reproducción → saltar
                         continue
 
-                    episode_num = episode.get("number", 0)
-
-                    # Crear un objeto "episode" compatible con simkl_episode_key
                     e = {
                         "season": season_num,
-                        "number": episode_num,
+                        "number": episode.get("number", 0),
                         "ids": episode.get("ids", {}),
                     }
 
@@ -919,10 +858,10 @@ def get_simkl_history(
                     if guid not in episodes:
                         episodes[guid] = (
                             show.get("title"),
-                            f"S{season_num:02d}E{episode_num:02d}",
+                            f"S{season_num:02d}E{episode.get('number', 0):02d}",
                             episode.get("watched_at"),
                         )
-    
+
     return movies, episodes
 
 
@@ -2126,7 +2065,7 @@ def test_connections() -> bool:
             "simkl-api-key": simkl_client_id,
         }
         try:
-            simkl_request("GET", "/sync/history", headers)
+            simkl_request("POST", "/sync/activities", headers)
             logger.info("Successfully connected to Simkl.")
         except Exception as exc:
             logger.error("Failed to connect to Simkl: %s", exc)

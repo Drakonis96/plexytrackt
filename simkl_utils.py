@@ -163,44 +163,71 @@ def simkl_movie_key(m: dict) -> Optional[str]:
 
 
 def get_simkl_history(
-    headers: dict, *, date_from: Optional[str] = None
+    headers: dict,
+    *,
+    date_from: Optional[str] = None,
 ) -> Tuple[
     Dict[str, Tuple[str, Optional[int], Optional[str]]],
     Dict[str, Tuple[str, str, Optional[str]]],
 ]:
+    """Return watched movies and episodes from Simkl using /sync/all-items."""
+
     movies: Dict[str, Tuple[str, Optional[int], Optional[str]]] = {}
     episodes: Dict[str, Tuple[str, str, Optional[str]]] = {}
 
-    params = {"type": "movies"}
+    params = {"extended": "full", "episode_watched_at": "yes"}
     if date_from:
         params["date_from"] = date_from
-    logger.info("Fetching Simkl watch history…")
-    resp = simkl_request("GET", "/sync/history", headers, params=params)
+
+    logger.info("Fetching Simkl watched items…")
+    resp = simkl_request("GET", "/sync/all-items", headers, params=params)
     data = resp.json()
-    if isinstance(data, list):
-        for item in data:
-            m = item.get("movie", {})
+    if data and isinstance(data, dict):
+        for movie_item in data.get("movies", []):
+            m = movie_item.get("movie", {})
             guid = simkl_movie_key(m)
             if not guid:
                 continue
-            if guid not in movies:
-                movies[guid] = (m.get("title"), normalize_year(m.get("year")), item.get("watched_at"))
-
-    params = {"type": "episodes"}
-    if date_from:
-        params["date_from"] = date_from
-    logger.info("Fetching Simkl episode history…")
-    resp = simkl_request("GET", "/sync/history", headers, params=params)
-    data = resp.json()
-    if isinstance(data, list):
-        for item in data:
-            e = item.get("episode", {})
-            show = item.get("show", {})
-            guid = simkl_episode_key(show, e)
-            if not guid:
+            if not (
+                movie_item.get("last_watched_at")
+                or movie_item.get("plays", 0) > 0
+                or movie_item.get("watched")
+            ):
                 continue
-            if guid not in episodes:
-                episodes[guid] = (show.get("title"), f"S{e.get('season', 0):02d}E{e.get('number', 0):02d}", item.get("watched_at"))
+            if guid not in movies:
+                movies[guid] = (
+                    m.get("title"),
+                    normalize_year(m.get("year")),
+                    movie_item.get("last_watched_at"),
+                )
+
+        for show_item in data.get("shows", []):
+            show = show_item.get("show", {})
+            seasons = show_item.get("seasons", [])
+            for season in seasons:
+                season_num = season.get("number", 0)
+                for episode in season.get("episodes", []):
+                    if not (
+                        episode.get("watched_at")
+                        or episode.get("plays", 0) > 0
+                        or episode.get("watched")
+                    ):
+                        continue
+
+                    ep = {
+                        "season": season_num,
+                        "number": episode.get("number", 0),
+                        "ids": episode.get("ids", {}),
+                    }
+                    guid = simkl_episode_key(show, ep)
+                    if not guid:
+                        continue
+                    if guid not in episodes:
+                        episodes[guid] = (
+                            show.get("title"),
+                            f"S{season_num:02d}E{episode.get('number', 0):02d}",
+                            episode.get("watched_at"),
+                        )
 
     return movies, episodes
 

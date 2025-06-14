@@ -12,7 +12,7 @@ from utils import guid_to_ids, normalize_year, to_iso_z, valid_guid, best_guid, 
 logger = logging.getLogger(__name__)
 
 APP_NAME = "PlexyTrack"
-APP_VERSION = "v0.2.6"
+APP_VERSION = "v0.2.7"
 USER_AGENT = f"{APP_NAME} / {APP_VERSION}"
 
 TOKEN_FILE = "trakt_tokens.json"

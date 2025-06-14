@@ -171,17 +171,13 @@ def get_simkl_history(
     movies: Dict[str, Tuple[str, Optional[int], Optional[str]]] = {}
     episodes: Dict[str, Tuple[str, str, Optional[str]]] = {}
 
-    params = {"limit": 100, "type": "movies"}
+    params = {"type": "movies"}
     if date_from:
         params["date_from"] = date_from
-    page = 1
     logger.info("Fetching Simkl watch history…")
-    while True:
-        params["page"] = page
-        resp = simkl_request("GET", "/sync/history", headers, params=params)
-        data = resp.json()
-        if not isinstance(data, list) or not data:
-            break
+    resp = simkl_request("GET", "/sync/history", headers, params=params)
+    data = resp.json()
+    if isinstance(data, list):
         for item in data:
             m = item.get("movie", {})
             guid = simkl_movie_key(m)
@@ -189,19 +185,14 @@ def get_simkl_history(
                 continue
             if guid not in movies:
                 movies[guid] = (m.get("title"), normalize_year(m.get("year")), item.get("watched_at"))
-        page += 1
 
-    params = {"limit": 100, "type": "episodes"}
+    params = {"type": "episodes"}
     if date_from:
         params["date_from"] = date_from
-    page = 1
     logger.info("Fetching Simkl episode history…")
-    while True:
-        params["page"] = page
-        resp = simkl_request("GET", "/sync/history", headers, params=params)
-        data = resp.json()
-        if not isinstance(data, list) or not data:
-            break
+    resp = simkl_request("GET", "/sync/history", headers, params=params)
+    data = resp.json()
+    if isinstance(data, list):
         for item in data:
             e = item.get("episode", {})
             show = item.get("show", {})
@@ -210,7 +201,6 @@ def get_simkl_history(
                 continue
             if guid not in episodes:
                 episodes[guid] = (show.get("title"), f"S{e.get('season', 0):02d}E{e.get('number', 0):02d}", item.get("watched_at"))
-        page += 1
 
     return movies, episodes
 

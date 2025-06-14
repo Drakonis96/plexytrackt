@@ -807,22 +807,18 @@ def get_simkl_history(
     episodes: Dict[str, Tuple[str, str, Optional[str]]] = {}
     
     # First, get movies from sync/history (watched history)
-    params = {"limit": 100, "type": "movies"}
+    params = {"type": "movies"}
     if date_from:
         params["date_from"] = date_from
-    page = 1
     logger.info("Fetching Simkl watch history…")
-    while True:
-        params["page"] = page
-        resp = simkl_request(
-            "GET",
-            "/sync/history",
-            headers,
-            params=params,
-        )
-        data = resp.json()
-        if not isinstance(data, list) or not data:
-            break
+    resp = simkl_request(
+        "GET",
+        "/sync/history",
+        headers,
+        params=params,
+    )
+    data = resp.json()
+    if isinstance(data, list):
         for item in data:
             m = item.get("movie", {})
             guid = simkl_movie_key(m)
@@ -834,25 +830,20 @@ def get_simkl_history(
                     normalize_year(m.get("year")),
                     item.get("watched_at"),
                 )
-        page += 1
     
     # Get episodes from sync/history
-    params = {"limit": 100, "type": "episodes"}
+    params = {"type": "episodes"}
     if date_from:
         params["date_from"] = date_from
-    page = 1
     logger.info("Fetching Simkl episode history…")
-    while True:
-        params["page"] = page
-        resp = simkl_request(
-            "GET",
-            "/sync/history",
-            headers,
-            params=params,
-        )
-        data = resp.json()
-        if not isinstance(data, list) or not data:
-            break
+    resp = simkl_request(
+        "GET",
+        "/sync/history",
+        headers,
+        params=params,
+    )
+    data = resp.json()
+    if isinstance(data, list):
         for item in data:
             e = item.get("episode", {})
             show = item.get("show", {})
@@ -865,7 +856,6 @@ def get_simkl_history(
                     f"S{e.get('season', 0):02d}E{e.get('number', 0):02d}",
                     item.get("watched_at"),
                 )
-        page += 1
     
     # Then, get movies from sync/all-items to include completed movies
     logger.info("Fetching Simkl all-items (full)…")
@@ -2136,7 +2126,7 @@ def test_connections() -> bool:
             "simkl-api-key": simkl_client_id,
         }
         try:
-            simkl_request("GET", "/sync/history", headers, params={"limit": 1})
+            simkl_request("GET", "/sync/history", headers)
             logger.info("Successfully connected to Simkl.")
         except Exception as exc:
             logger.error("Failed to connect to Simkl: %s", exc)

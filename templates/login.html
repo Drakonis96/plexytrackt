@@ -45,6 +45,29 @@
                     <button type="submit" class="button primary">Login</button>
                 </form>
             </section>
+
+            {% if users %}
+            <section class="card">
+                <h2>Select Plex User</h2>
+                {% if error_select %}
+                <div class="status-message error">{{ error_select }}</div>
+                {% endif %}
+                <form method="post" action="{{ url_for('plex_select_user') }}" class="provider-form">
+                    <div class="provider-toggle">
+                        {% for user in users %}
+                        <label>
+                            <input type="radio" name="user_id" value="{{ user.id }}" {% if loop.first %}checked{% endif %}>
+                            {{ user.title }}
+                        </label>
+                        {% endfor %}
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="button primary">Select</button>
+                        <a href="{{ url_for('plex_logout') }}" class="button secondary">Logout</a>
+                    </div>
+                </form>
+            </section>
+            {% endif %}
         </main>
 
         <footer class="app-footer">

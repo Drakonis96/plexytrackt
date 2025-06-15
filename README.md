@@ -137,6 +137,8 @@ docker-compose -f docker-compose-local.yml up --build
 
    A sync interval of **at least 60 minutes is recommended**. Shorter intervals are generally unnecessary, and you can even schedule the job every 24 hours to reduce the load on your server and the Trakt or Simkl API.
 
+5. Sign in on the **Login** tab to choose your Plex user. You can return to the login page at any time and use the **Logout** button to clear the stored credentials.
+
 That's it! The container will continue to sync your Plex account with Trakt and/or Simkl according to the interval you set.
 
 ## Screenshots

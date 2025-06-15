@@ -31,6 +31,7 @@ from apscheduler.schedulers.base import STATE_STOPPED
 from plexapi.server import PlexServer
 from plexapi.myplex import MyPlexAccount
 from plexapi.exceptions import BadRequest, NotFound, Unauthorized, TwoFactorRequired
+from urllib.parse import urlparse
 
 from utils import (
     to_iso_z,
@@ -1921,7 +1922,9 @@ def plex_login():
         except Exception as exc:  # noqa: BLE001
             logger.error("Failed to list Plex users: %s", exc)
 
-        return render_template("plex_users.html", users=users)
+        return render_template(
+            "login.html", users=users, username=username, error=error
+        )
 
     return render_template("login.html", error=error, username=username)
 
@@ -1935,23 +1938,70 @@ def plex_select_user():
     user_id = request.form.get("user_id")
     try:
         if user_id == "account":
-            token = plex_account.authenticationToken
+            sub = plex_account
             user_name = plex_account.username or "admin"
         else:
             user_obj = next(u for u in plex_account.users() if str(u.id) == user_id)
             sub = plex_account.switchHomeUser(user_obj)
-            token = sub.authenticationToken
             user_name = user_obj.title
+
+        baseurl = os.environ.get("PLEX_BASEURL", "").rstrip("/")
+        parsed = urlparse(baseurl)
+        server_resource = None
+        for res in sub.resources():
+            if "server" not in res.provides:
+                continue
+            for conn in res.connections:
+                if urlparse(conn.uri).hostname == parsed.hostname and (
+                    (urlparse(conn.uri).port or (443 if parsed.scheme == "https" else 80))
+                    == (parsed.port or (443 if parsed.scheme == "https" else 80))
+                ):
+                    server_resource = res
+                    break
+            if server_resource:
+                break
+
+        if server_resource:
+            plex = server_resource.connect()
+            token = plex._token
+        else:
+            token = sub.authenticationToken
+            plex = PlexServer(baseurl, token)
 
         os.environ["PLEX_TOKEN"] = token
         os.environ["PLEX_USER"] = user_name
         save_plex_token(token, user_name)
-        plex = PlexServer(os.environ.get("PLEX_BASEURL"), token)
     except Exception as exc:  # noqa: BLE001
         logger.error("Failed selecting Plex user: %s", exc)
-        return render_template("plex_users.html", users=[{"id": "account", "title": plex_account.username}], error="Failed to select user")
+        users = [{"id": "account", "title": plex_account.username or "Admin"}]
+        try:
+            for u in plex_account.users():
+                if getattr(u, "home", False):
+                    users.append({"id": str(u.id), "title": u.title})
+        except Exception:
+            pass
+        return render_template(
+            "login.html", users=users, username=plex_account.username, error_select="Failed to select user"
+        )
 
     return redirect(url_for("index"))
+
+
+@app.route("/logout")
+def plex_logout():
+    """Clear saved Plex credentials."""
+    global plex, plex_account
+    plex = None
+    plex_account = None
+    os.environ.pop("PLEX_TOKEN", None)
+    os.environ.pop("PLEX_USER", None)
+    if os.path.exists(PLEX_TOKEN_FILE):
+        try:
+            os.remove(PLEX_TOKEN_FILE)
+            logger.info("Removed Plex token file")
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed to remove Plex token file: %s", exc)
+    return redirect(url_for("plex_login"))
 
 
 @app.route("/authorize/<service>", methods=["GET", "POST"])

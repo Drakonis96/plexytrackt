@@ -14,20 +14,6 @@ from utils import (
 logger = logging.getLogger(__name__)
 
 
-def get_user_token(plex, identifier: str) -> Optional[str]:
-    """Return an access token for the given Plex user identifier."""
-    try:
-        account = plex.myPlexAccount()
-        if identifier in (str(account.id), getattr(account, "username", None)):
-            return plex._token
-        for user in account.users():
-            if identifier in (str(user.id), user.title, getattr(user, "username", None)):
-                return user.get_token(plex.machineIdentifier)
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Failed to get token for Plex user %s: %s", identifier, exc)
-    return None
-
-
 def get_plex_history(plex, accounts: Optional[List[str]] = None) -> Tuple[
     Dict[str, Dict[str, Optional[str]]],
     Dict[str, Dict[str, Optional[str]]],
@@ -160,7 +146,6 @@ def update_plex(
     plex,
     movies: Set[Tuple[str, Optional[int], Optional[str]]],
     episodes: Set[Tuple[str, str, Optional[str]]],  # Only allow str for key, not Tuple fallback
-    token: Optional[str] = None,
 ) -> None:
     """Mark items as watched in Plex when missing."""
     movie_count = 0
@@ -173,11 +158,7 @@ def update_plex(
                 if item and getattr(item, "isWatched", lambda: bool(getattr(item, "viewCount", 0)))():
                     continue
                 if item:
-                    params = {"key": item.ratingKey, "identifier": "com.plexapp.plugins.library"}
-                    if token:
-                        plex.query("/:/scrobble", params=params, headers={"X-Plex-Token": token})
-                    else:
-                        plex.query("/:/scrobble", params=params)
+                    item.markWatched()
                     movie_count += 1
                     continue
             except Exception as exc:
@@ -207,11 +188,7 @@ def update_plex(
             is_watched = getattr(found, "isWatched", False) or bool(getattr(found, "viewCount", 0))
             if is_watched:
                 continue
-            params = {"key": found.ratingKey, "identifier": "com.plexapp.plugins.library"}
-            if token:
-                plex.query("/:/scrobble", params=params, headers={"X-Plex-Token": token})
-            else:
-                plex.query("/:/scrobble", params=params)
+            found.markWatched()
             movie_count += 1
         except Exception as exc:
             logger.debug("Failed to mark movie '%s' as watched: %s", found.title, exc)
@@ -230,11 +207,7 @@ def update_plex(
                     is_watched = getattr(item, "isWatched", False) or bool(getattr(item, "viewCount", 0))
                     if is_watched:
                         continue
-                    params = {"key": item.ratingKey, "identifier": "com.plexapp.plugins.library"}
-                    if token:
-                        plex.query("/:/scrobble", params=params, headers={"X-Plex-Token": token})
-                    else:
-                        plex.query("/:/scrobble", params=params)
+                    item.markWatched()
                     episode_count += 1
                     continue
             except Exception as exc:
@@ -258,11 +231,7 @@ def update_plex(
             is_watched = getattr(ep_obj, "isWatched", False) or bool(getattr(ep_obj, "viewCount", 0))
             if is_watched:
                 continue
-            params = {"key": ep_obj.ratingKey, "identifier": "com.plexapp.plugins.library"}
-            if token:
-                plex.query("/:/scrobble", params=params, headers={"X-Plex-Token": token})
-            else:
-                plex.query("/:/scrobble", params=params)
+            ep_obj.markWatched()
             episode_count += 1
         except Exception as exc:
             logger.debug("Failed marking episode %s - %s as watched: %s", show_title, code, exc)

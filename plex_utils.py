@@ -14,7 +14,7 @@ from utils import (
 logger = logging.getLogger(__name__)
 
 
-def get_plex_history(plex) -> Tuple[
+def get_plex_history(plex, account_id: Optional[int] = None) -> Tuple[
     Dict[str, Dict[str, Optional[str]]],
     Dict[str, Dict[str, Optional[str]]],
 ]:
@@ -24,7 +24,7 @@ def get_plex_history(plex) -> Tuple[
     show_guid_cache: Dict[str, Optional[str]] = {}
 
     logger.info("Fetching Plex history…")
-    for entry in plex.history():
+    for entry in plex.history(accountID=account_id):
         watched_at = to_iso_z(getattr(entry, "viewedAt", None))
 
         if entry.type == "movie":
@@ -90,7 +90,7 @@ def get_plex_history(plex) -> Tuple[
     for section in plex.library.sections():
         try:
             if section.type == "movie":
-                for item in section.search(viewCount__gt=0):
+                for item in section.search(viewCount__gt=0, accountID=account_id):
                     title = item.title
                     year = normalize_year(getattr(item, "year", None))
                     guid = imdb_guid(item)
@@ -102,7 +102,7 @@ def get_plex_history(plex) -> Tuple[
                             "guid": guid,
                         }
             elif section.type == "show":
-                for ep in section.searchEpisodes(viewCount__gt=0):
+                for ep in section.searchEpisodes(viewCount__gt=0, accountID=account_id):
                     code = f"S{int(ep.seasonNumber):02d}E{int(ep.episodeNumber):02d}"
                     guid = imdb_guid(ep)
                     show_title = getattr(ep, "grandparentTitle", None)
@@ -124,6 +124,7 @@ def update_plex(
     plex,
     movies: Set[Tuple[str, Optional[int], Optional[str]]],
     episodes: Set[Tuple[str, str, Optional[str]]],  # Only allow str for key, not Tuple fallback
+    account_id: Optional[int] = None,
 ) -> None:
     """Mark items as watched in Plex when missing."""
     movie_count = 0
@@ -136,7 +137,17 @@ def update_plex(
                 if item and getattr(item, "isWatched", lambda: bool(getattr(item, "viewCount", 0)))():
                     continue
                 if item:
-                    item.markWatched()
+                    if account_id:
+                        plex.query(
+                            "/:/scrobble",
+                            params={
+                                "key": item.ratingKey,
+                                "identifier": "com.plexapp.plugins.library",
+                                "accountID": account_id,
+                            },
+                        )
+                    else:
+                        item.markWatched()
                     movie_count += 1
                     continue
             except Exception as exc:
@@ -166,7 +177,17 @@ def update_plex(
             is_watched = getattr(found, "isWatched", False) or bool(getattr(found, "viewCount", 0))
             if is_watched:
                 continue
-            found.markWatched()
+            if account_id:
+                plex.query(
+                    "/:/scrobble",
+                    params={
+                        "key": found.ratingKey,
+                        "identifier": "com.plexapp.plugins.library",
+                        "accountID": account_id,
+                    },
+                )
+            else:
+                found.markWatched()
             movie_count += 1
         except Exception as exc:
             logger.debug("Failed to mark movie '%s' as watched: %s", found.title, exc)
@@ -185,7 +206,17 @@ def update_plex(
                     is_watched = getattr(item, "isWatched", False) or bool(getattr(item, "viewCount", 0))
                     if is_watched:
                         continue
-                    item.markWatched()
+                    if account_id:
+                        plex.query(
+                            "/:/scrobble",
+                            params={
+                                "key": item.ratingKey,
+                                "identifier": "com.plexapp.plugins.library",
+                                "accountID": account_id,
+                            },
+                        )
+                    else:
+                        item.markWatched()
                     episode_count += 1
                     continue
             except Exception as exc:
@@ -209,7 +240,17 @@ def update_plex(
             is_watched = getattr(ep_obj, "isWatched", False) or bool(getattr(ep_obj, "viewCount", 0))
             if is_watched:
                 continue
-            ep_obj.markWatched()
+            if account_id:
+                plex.query(
+                    "/:/scrobble",
+                    params={
+                        "key": ep_obj.ratingKey,
+                        "identifier": "com.plexapp.plugins.library",
+                        "accountID": account_id,
+                    },
+                )
+            else:
+                ep_obj.markWatched()
             episode_count += 1
         except Exception as exc:
             logger.debug("Failed marking episode %s - %s as watched: %s", show_title, code, exc)

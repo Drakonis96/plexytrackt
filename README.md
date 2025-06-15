@@ -114,6 +114,8 @@ PlexyTrack now tries to obtain the token for any managed user selected via `PLEX
 4. Locate the entry with the matching user `id` and copy its `accessToken`.
 5. Use this token as `PLEX_TOKEN` when syncing that managed user.
 
+Watchlist synchronization also respects the selected Plex user and uses the retrieved token when adding or removing items.
+
 ## Getting Trakt API credentials
 
 1. Log in to your Trakt account and open <https://trakt.tv/oauth/applications>.

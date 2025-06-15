@@ -113,7 +113,7 @@ werkzeug_logger.setLevel(logging.WARNING)
 # APPLICATION INFO
 # --------------------------------------------------------------------------- #
 APP_NAME = "PlexyTrack"
-APP_VERSION = "v0.2.7"
+APP_VERSION = "v0.2.8"
 USER_AGENT = f"{APP_NAME} / {APP_VERSION}"
 
 # --------------------------------------------------------------------------- #
@@ -1364,12 +1364,23 @@ def sync():
                     logger.error("Liked-lists sync failed: %s", exc)
             if SYNC_WATCHLISTS:
                 try:
-                    sync_watchlist(
-                        plex,
-                        headers,
-                        plex_movie_guids | plex_episode_guids,
-                        trakt_movie_guids | trakt_episode_guids,
-                    )
+                    if PLEX_ACCOUNTS:
+                        for acc in PLEX_ACCOUNTS:
+                            token = get_user_token(plex, acc)
+                            sync_watchlist(
+                                plex,
+                                headers,
+                                plex_movie_guids | plex_episode_guids,
+                                trakt_movie_guids | trakt_episode_guids,
+                                token,
+                            )
+                    else:
+                        sync_watchlist(
+                            plex,
+                            headers,
+                            plex_movie_guids | plex_episode_guids,
+                            trakt_movie_guids | trakt_episode_guids,
+                        )
                 except TraktAccountLimitError as exc:
                     logger.error("Watchlist sync skipped: %s", exc)
                 except Exception as exc:
@@ -1494,7 +1505,12 @@ def sync():
         logger.warning("Ratings sync with Simkl is not yet supported.")
 
     if SYNC_WATCHLISTS and SYNC_PROVIDER == "trakt":
-        sync_watchlist(plex, headers, plex_movies, trakt_movies)
+        if PLEX_ACCOUNTS:
+            for acc in PLEX_ACCOUNTS:
+                token = get_user_token(plex, acc)
+                sync_watchlist(plex, headers, plex_movies, trakt_movies, token)
+        else:
+            sync_watchlist(plex, headers, plex_movies, trakt_movies)
     elif SYNC_WATCHLISTS and SYNC_PROVIDER == "simkl":
         logger.warning("Watchlist sync with Simkl is not yet supported.")
 

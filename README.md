@@ -14,7 +14,6 @@ The recommended sync interval is **at least 60 minutes**. Shorter intervals gene
 - [Collections and watchlists](#collections-and-watchlists)
 - [Backup and restore](#backup-and-restore)
 - [Live sync](#live-sync)
-- [Discover items](#discover-items)
 - [Getting a Plex token](#getting-a-plex-token)
 - [Getting Trakt API credentials](#getting-trakt-api-credentials)
 - [Running with Docker Compose](#running-with-docker-compose)
@@ -76,13 +75,6 @@ From the web interface you can download a backup file containing your Trakt hist
 When **Live Sync** is enabled on the main page, PlexyTrack will start a
 webhook endpoint at `/webhook`. Configure a Plex Webhook to call this URL and
 the application will trigger an immediate sync whenever an event is received.
-
-### Discover items
-
-Items not present in your Plex library can also be marked as watched. When a
-movie or episode from Trakt or Simkl is missing locally, PlexyTrack searches the
-Plex Discover catalog and updates its played state there. This ensures your
-watch history stays complete even if the file is not stored on your server.
 
 ## Getting a Plex token
 

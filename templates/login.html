@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PlexyTrack - OAuth</title>
+    <title>PlexyTrack - Login</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
@@ -18,25 +18,33 @@
                 <a href="{{ url_for('index') }}" class="nav-link">Sync</a>
                 <a href="{{ url_for('backup_page') }}" class="nav-link">Backup</a>
                 <a href="{{ url_for('config_page') }}" class="nav-link">Config.</a>
-                <a href="{{ url_for('oauth_index') }}" class="nav-link active">OAuth</a>
-                <a href="{{ url_for('plex_login') }}" class="nav-link">Login</a>
+                <a href="{{ url_for('oauth_index') }}" class="nav-link">OAuth</a>
+                <a href="{{ url_for('plex_login') }}" class="nav-link active">Login</a>
             </nav>
         </header>
 
         <main class="content-area">
-            {% if code %}
             <section class="card">
-                <h2>{{ service }} Authorization Code</h2>
-                <p class="description">Copy the code below and paste it into the Config. tab to finish authentication.</p>
-                <div class="oauth-code">{{ code }}</div>
-                <a href="{{ url_for('authorize_service', service=service.lower(), code=code) }}" class="button primary" style="margin-top:10px;">Continue</a>
+                <h2>Plex Login</h2>
+                {% if error %}
+                <div class="status-message error">{{ error }}</div>
+                {% endif %}
+                <form method="post" class="auth-form">
+                    <div class="form-group">
+                        <label for="username">Username or Email:</label>
+                        <input type="text" id="username" name="username" class="form-input" required value="{{ username }}">
+                    </div>
+                    <div class="form-group">
+                        <label for="password">Password:</label>
+                        <input type="password" id="password" name="password" class="form-input" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="code">2FA Code (if required):</label>
+                        <input type="text" id="code" name="code" class="form-input" value="">
+                    </div>
+                    <button type="submit" class="button primary">Login</button>
+                </form>
             </section>
-            {% else %}
-            <section class="card">
-                <h2>OAuth Codes</h2>
-                <p class="description">After authorizing on Trakt or Simkl you will be redirected here and the code will be displayed.</p>
-            </section>
-            {% endif %}
         </main>
 
         <footer class="app-footer">

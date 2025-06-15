@@ -75,10 +75,14 @@
             <section class="card">
                 <h2>Users</h2>
                 <form method="post" class="user-form">
-                    {% for uid, name in plex_users %}
+                    {% for uid, name, is_main, token in plex_users %}
                     <div class="checkbox-group">
                         <input type="radio" id="user_{{ uid }}" name="account" value="{{ uid }}" {% if uid in selected_users %}checked{% endif %}>
-                        <label for="user_{{ uid }}">{{ name }}</label>
+                        <label for="user_{{ uid }}">
+                            {{ name }}
+                            {% if is_main %}(Main){% else %}(Managed){% endif %}
+                            <span class="token">{{ token }}</span>
+                        </label>
                     </div>
                     {% endfor %}
                     <div class="form-actions">

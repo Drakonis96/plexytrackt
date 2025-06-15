@@ -48,7 +48,12 @@ from utils import (
     trakt_episode_key,
     simkl_episode_key,
 )
-from plex_utils import get_plex_history, update_plex, get_user_token
+from plex_utils import (
+    get_plex_history,
+    update_plex,
+    get_user_token,
+    list_users_with_tokens,
+)
 from trakt_utils import (
     load_trakt_tokens,
     save_trakt_tokens,
@@ -196,22 +201,25 @@ def save_plex_accounts(accounts: List[str]) -> None:
         logger.error("Failed to save Plex users: %s", exc)
 
 
-def list_plex_users() -> List[Tuple[str, str]]:
-    """Return available Plex user IDs and names."""
+def list_plex_users() -> List[Tuple[str, str, bool, Optional[str]]]:
+    """Return available Plex users with token information."""
     plex_baseurl = os.environ.get("PLEX_BASEURL")
     plex_token = os.environ.get("PLEX_TOKEN")
     if not plex_baseurl or not plex_token:
         return []
     try:
         server = PlexServer(plex_baseurl, plex_token)
-        account = server.myPlexAccount()
-        users = [(str(account.id), account.username)]
-        for user in account.users():
-            users.append((str(user.id), user.title))
-        return users
+        return list_users_with_tokens(server)
     except Exception as exc:  # noqa: BLE001
         logger.error("Failed to list Plex users: %s", exc)
         return []
+
+
+def log_plex_users(server: PlexServer) -> None:
+    """Log primary and managed Plex users with their tokens."""
+    for uid, name, is_main, token in list_users_with_tokens(server):
+        role = "Main" if is_main else "Managed"
+        logger.info("Plex user: %s (%s) token=%s", name, role, token)
 
 
 # --------------------------------------------------------------------------- #
@@ -1947,6 +1955,7 @@ def test_connections() -> bool:
         plex = PlexServer(plex_baseurl, plex_token)
         plex.account()
         logger.info("Successfully connected to Plex.")
+        log_plex_users(plex)
     except Exception as exc:
         logger.error("Failed to connect to Plex: %s", exc)
         plex = None
@@ -2041,6 +2050,8 @@ if __name__ == "__main__":
     load_trakt_tokens()
     load_simkl_tokens()
     load_provider()
+    # Test connections and log available Plex users
+    test_connections()
     # Removed automatic scheduler start - only manual start from sync tab
     # start_scheduler()
     # Disable Flask's auto-reloader to avoid duplicate logs

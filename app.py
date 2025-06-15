@@ -24,13 +24,11 @@ from flask import (
     redirect,
     url_for,
     has_request_context,
-    session,
 )
 from flask import send_file
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.schedulers.base import STATE_STOPPED
 from plexapi.server import PlexServer
-from plexapi.myplex import MyPlexAccount
 from plexapi.exceptions import BadRequest, NotFound
 
 from utils import (
@@ -135,7 +133,6 @@ PROVIDER_FILE = "provider.json"
 scheduler = BackgroundScheduler()
 plex = None  # will hold PlexServer instance
 USERS_FILE = "plex_users.json"
-PLEX_CREDS_FILE = "plex_credentials.json"
 PLEX_ACCOUNTS: List[str] = [
     a.strip() for a in os.environ.get("PLEX_ACCOUNT", "").split(",") if a.strip()
 ]
@@ -204,36 +201,8 @@ def save_plex_accounts(accounts: List[str]) -> None:
         logger.error("Failed to save Plex users: %s", exc)
 
 
-def load_plex_credentials() -> None:
-    """Load Plex base URL and token from file if not set."""
-    if os.environ.get("PLEX_BASEURL") and os.environ.get("PLEX_TOKEN"):
-        return
-    if os.path.exists(PLEX_CREDS_FILE):
-        try:
-            with open(PLEX_CREDS_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            os.environ.setdefault("PLEX_BASEURL", data.get("baseurl", ""))
-            os.environ.setdefault("PLEX_TOKEN", data.get("token", ""))
-            logger.info("Loaded Plex credentials from %s", PLEX_CREDS_FILE)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Failed to load Plex credentials: %s", exc)
-
-
-def save_plex_credentials(baseurl: str, token: str) -> None:
-    """Persist Plex base URL and token to file."""
-    os.environ["PLEX_BASEURL"] = baseurl
-    os.environ["PLEX_TOKEN"] = token
-    try:
-        with open(PLEX_CREDS_FILE, "w", encoding="utf-8") as f:
-            json.dump({"baseurl": baseurl, "token": token}, f, indent=2)
-        logger.info("Saved Plex credentials to %s", PLEX_CREDS_FILE)
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Failed to save Plex credentials: %s", exc)
-
-
 def list_plex_users() -> List[Tuple[str, str, bool, Optional[str]]]:
     """Return available Plex users with token information."""
-    load_plex_credentials()
     plex_baseurl = os.environ.get("PLEX_BASEURL")
     plex_token = os.environ.get("PLEX_TOKEN")
     if not plex_baseurl or not plex_token:
@@ -1709,7 +1678,6 @@ def index():
     load_trakt_tokens()
     load_simkl_tokens()
     load_provider()
-    load_plex_credentials()
 
     # Change interval and start sync when requested
     if request.method == "POST":
@@ -1794,71 +1762,12 @@ def simkl_callback():
     return redirect(url_for("oauth_callback", service="simkl", code=code))
 
 
-@app.route("/plex_setup", methods=["GET", "POST"])
-def plex_setup():
-    """Interactive Plex login and server/user selection."""
-    step = request.args.get("step", "login")
-    error = None
-    if step == "login":
-        if request.method == "POST":
-            username = request.form.get("username", "").strip()
-            password = request.form.get("password", "").strip()
-            code = request.form.get("code", "").strip() or None
-            try:
-                account = MyPlexAccount(username=username, password=password, code=code)
-                session["plex_token"] = account._token
-                servers = []
-                for res in account.resources():
-                    if "server" in res.provides:
-                        conn = res.connections[0]
-                        servers.append({
-                            "id": res.clientIdentifier,
-                            "name": res.name,
-                            "uri": conn.uri,
-                            "token": res.accessToken,
-                        })
-                session["plex_servers"] = servers
-                return redirect(url_for("plex_setup", step="server"))
-            except Exception as exc:  # noqa: BLE001
-                error = f"Login failed: {exc}"
-        return render_template("plex_setup.html", step="login", error=error)
-
-    if step == "server":
-        servers = session.get("plex_servers", [])
-        if request.method == "POST":
-            sid = request.form.get("server")
-            srv = next((s for s in servers if s["id"] == sid), None)
-            if srv:
-                save_plex_credentials(srv["uri"], srv["token"])
-                session.pop("plex_servers", None)
-                return redirect(url_for("plex_setup", step="user"))
-        return render_template("plex_setup.html", step="server", servers=servers)
-
-    if step == "user":
-        load_plex_credentials()
-        plex_baseurl = os.environ.get("PLEX_BASEURL")
-        plex_token = os.environ.get("PLEX_TOKEN")
-        if not plex_baseurl or not plex_token:
-            return redirect(url_for("plex_setup"))
-        server = PlexServer(plex_baseurl, plex_token)
-        users = list_users_with_tokens(server)
-        if request.method == "POST":
-            selected = request.form.get("account")
-            if selected:
-                save_plex_accounts([selected])
-            return redirect(url_for("config_page"))
-        return render_template("plex_setup.html", step="user", users=users)
-
-    return redirect(url_for("config_page"))
-
-
 @app.route("/config", methods=["GET", "POST"])
 def config_page():
     """Display configuration status for Trakt and Simkl."""
     load_trakt_tokens()
     load_simkl_tokens()
     load_provider()
-    load_plex_credentials()
     load_plex_accounts()
     plex_users = list_plex_users()
     if request.method == "POST":
@@ -2042,7 +1951,6 @@ def plex_webhook():
 # --------------------------------------------------------------------------- #
 def test_connections() -> bool:
     global plex
-    load_plex_credentials()
     plex_baseurl = os.environ.get("PLEX_BASEURL")
     plex_token = os.environ.get("PLEX_TOKEN")
     trakt_token = os.environ.get("TRAKT_ACCESS_TOKEN")

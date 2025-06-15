@@ -1945,14 +1945,6 @@ def plex_select_user():
         return redirect(url_for("plex_login"))
     user_id = request.form.get("user_id")
     try:
-        if user_id == "account":
-            user_name = plex_account.username or "admin"
-            account_id = plex_account.id
-        else:
-            user_obj = next(u for u in plex_account.users() if str(u.id) == user_id)
-            user_name = user_obj.title
-            account_id = user_obj.id
-
         baseurl = os.environ.get("PLEX_BASEURL", "").rstrip("/")
         parsed = urlparse(baseurl)
         server_resource = None
@@ -1971,9 +1963,24 @@ def plex_select_user():
 
         if server_resource:
             plex = server_resource.connect()
-            token = plex._token
+            machine_id = plex.machineIdentifier
+            owner_token = plex._token
         else:
-            token = plex_account.authenticationToken
+            plex = PlexServer(baseurl, plex_account.authenticationToken)
+            machine_id = plex.machineIdentifier
+            owner_token = plex._token
+
+        if user_id == "account":
+            token = owner_token
+            user_name = plex_account.username or "admin"
+            account_id = plex_account.id
+        else:
+            user_obj = next(u for u in plex_account.users() if str(u.id) == user_id)
+            token = user_obj.get_token(machine_id)
+            user_name = user_obj.title
+            account_id = user_obj.id
+
+        if token != plex._token:
             plex = PlexServer(baseurl, token)
 
         os.environ["PLEX_TOKEN"] = token

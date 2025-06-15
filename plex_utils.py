@@ -80,29 +80,6 @@ def get_user_token(plex, identifier: str) -> Optional[str]:
     return None
 
 
-def list_users_with_tokens(plex) -> List[Tuple[str, str, bool, Optional[str]]]:
-    """Return Plex users with their tokens.
-
-    Each tuple contains ``id``, ``name``, ``is_main`` and ``token``. ``is_main``
-    is ``True`` for the primary account and ``False`` for managed users.
-    """
-    users_info: List[Tuple[str, str, bool, Optional[str]]] = []
-    try:
-        account = plex.myPlexAccount()
-        main_id = str(account.id)
-        main_name = account.username or "unknown"
-        main_token = get_user_token(plex, main_id) or plex._token
-        users_info.append((main_id, main_name, True, main_token))
-        for user in account.users():
-            uid = str(user.id)
-            name = user.title
-            token = get_user_token(plex, uid)
-            users_info.append((uid, name, False, token))
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Failed to list Plex users with tokens: %s", exc)
-    return users_info
-
-
 def get_plex_history(plex, accounts: Optional[List[str]] = None) -> Tuple[
     Dict[str, Dict[str, Optional[str]]],
     Dict[str, Dict[str, Optional[str]]],

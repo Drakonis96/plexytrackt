@@ -74,6 +74,7 @@
 
             <section class="card">
                 <h2>Users</h2>
+                {% if plex_users %}
                 <form method="post" class="user-form">
                     {% for uid, name, is_main, token in plex_users %}
                     <div class="checkbox-group">
@@ -92,6 +93,10 @@
                 <form method="get" action="{{ url_for('config_page') }}" class="stop-form">
                     <button type="submit" class="button secondary">Update Users</button>
                 </form>
+                {% else %}
+                <p>No Plex credentials configured.</p>
+                <a href="{{ url_for('plex_setup') }}" class="button primary">Configure Plex</a>
+                {% endif %}
             </section>
         </main>
 

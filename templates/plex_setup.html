@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PlexyTrack - Plex Setup</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+</head>
+<body>
+    <div class="app-container">
+        <header class="app-header">
+            <img src="{{ url_for('static', filename='logo.png') }}" alt="PlexyTrack Logo" class="logo">
+            <h1>PlexyTrack</h1>
+            <nav class="app-nav">
+                <a href="{{ url_for('index') }}" class="nav-link">Sync</a>
+                <a href="{{ url_for('backup_page') }}" class="nav-link">Backup</a>
+                <a href="{{ url_for('config_page') }}" class="nav-link active">Config.</a>
+                <a href="{{ url_for('oauth_index') }}" class="nav-link">OAuth</a>
+            </nav>
+        </header>
+
+        <main class="content-area">
+            {% if step == 'login' %}
+            <section class="card">
+                <h2>Plex Login</h2>
+                {% if error %}<div class="status-message error">{{ error }}</div>{% endif %}
+                <form method="post">
+                    <div class="form-group">
+                        <label for="username">Username or Email</label>
+                        <input type="text" id="username" name="username" required class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label for="password">Password</label>
+                        <input type="password" id="password" name="password" required class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label for="code">2FA Code (optional)</label>
+                        <input type="text" id="code" name="code" class="form-input">
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="button primary">Login</button>
+                    </div>
+                </form>
+            </section>
+            {% elif step == 'server' %}
+            <section class="card">
+                <h2>Select Plex Server</h2>
+                <form method="post">
+                    {% for srv in servers %}
+                    <div class="checkbox-group">
+                        <input type="radio" id="srv_{{ srv.id }}" name="server" value="{{ srv.id }}" {% if loop.first %}checked{% endif %}>
+                        <label for="srv_{{ srv.id }}">{{ srv.name }}</label>
+                    </div>
+                    {% endfor %}
+                    <div class="form-actions">
+                        <button type="submit" class="button primary">Save</button>
+                    </div>
+                </form>
+            </section>
+            {% elif step == 'user' %}
+            <section class="card">
+                <h2>Select Plex User</h2>
+                <form method="post">
+                    {% for uid, name, is_main, token in users %}
+                    <div class="checkbox-group">
+                        <input type="radio" id="user_{{ uid }}" name="account" value="{{ uid }}" {% if loop.first %}checked{% endif %}>
+                        <label for="user_{{ uid }}">{{ name }} {% if is_main %}(Main){% else %}(Managed){% endif %}</label>
+                    </div>
+                    {% endfor %}
+                    <div class="form-actions">
+                        <button type="submit" class="button primary">Save</button>
+                    </div>
+                </form>
+            </section>
+            {% endif %}
+        </main>
+
+        <footer class="app-footer">
+            <p>MIT License. By <a href="https://github.com/Drakonis96" target="_blank" rel="noopener">Drakonis96</a></p>
+        </footer>
+    </div>
+</body>
+</html>

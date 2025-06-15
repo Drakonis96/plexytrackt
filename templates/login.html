@@ -26,6 +26,13 @@
         <main class="content-area">
             <section class="card">
                 <h2>Plex Login</h2>
+                {% if logged_in %}
+                <div class="status-message success">Logged in as {{ current_user }}.</div>
+                <div class="form-actions">
+                    <a href="{{ url_for('index') }}" class="button primary">Continue</a>
+                    <a href="{{ url_for('plex_logout') }}" class="button secondary">Logout</a>
+                </div>
+                {% else %}
                 {% if error %}
                 <div class="status-message error">{{ error }}</div>
                 {% endif %}
@@ -44,6 +51,7 @@
                     </div>
                     <button type="submit" class="button primary">Login</button>
                 </form>
+                {% endif %}
             </section>
 
             {% if users %}

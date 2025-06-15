@@ -107,7 +107,7 @@ for user in account.users():
 Use the displayed name (or ID) in the `PLEX_ACCOUNT` variable.
 
 ## Managed user tokens
-PlexyTrack now tries to obtain the token for any managed user selected via `PLEX_ACCOUNT` automatically. If that fails you can still fetch it manually using the Plex API:
+PlexyTrack now tries to obtain the token for any managed user selected via `PLEX_ACCOUNT` automatically. The lookup also fetches the managed user's machine identifier so the proper access token can be requested. If that fails you can still fetch it manually using the Plex API:
 1. Obtain your admin token as described above.
 2. Visit `https://plex.tv/api/users?X-Plex-Token=YOUR_TOKEN` and note the `id` and `machineIdentifier` of the desired user.
 3. Go to `https://plex.tv/api/servers/MACHINE_ID/shared_servers?X-Plex-Token=YOUR_TOKEN` using that machine identifier.

@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, Optional, Set, Tuple, List
+from typing import Dict, Optional, Set, Tuple
 
 from utils import (
     _parse_guid_value,
@@ -14,7 +14,7 @@ from utils import (
 logger = logging.getLogger(__name__)
 
 
-def get_plex_history(plex, accounts: Optional[List[str]] = None) -> Tuple[
+def get_plex_history(plex) -> Tuple[
     Dict[str, Dict[str, Optional[str]]],
     Dict[str, Dict[str, Optional[str]]],
 ]:
@@ -24,29 +24,7 @@ def get_plex_history(plex, accounts: Optional[List[str]] = None) -> Tuple[
     show_guid_cache: Dict[str, Optional[str]] = {}
 
     logger.info("Fetching Plex history…")
-    account_ids: List[int] = []
-    if accounts:
-        for acc in accounts:
-            try:
-                account_ids.append(int(acc))
-            except ValueError:
-                try:
-                    user = plex.myPlexAccount().user(acc)
-                    if hasattr(user, "id"):
-                        account_ids.append(int(user.id))
-                except Exception as exc:  # noqa: BLE001
-                    logger.error("Failed to resolve Plex account %s: %s", acc, exc)
-
-    def iter_history():
-        if account_ids:
-            for aid in account_ids:
-                for en in plex.history(accountID=aid):
-                    yield en
-        else:
-            for en in plex.history():
-                yield en
-
-    for entry in iter_history():
+    for entry in plex.history():
         watched_at = to_iso_z(getattr(entry, "viewedAt", None))
 
         if entry.type == "movie":

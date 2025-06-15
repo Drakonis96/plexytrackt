@@ -159,6 +159,8 @@ def update_plex(
 
         if not found:
             logger.debug("Movie not found in Plex library: %s (%s)", title, year)
+            if mark_movie_watched_discover(plex, title, year, guid):
+                movie_count += 1
             continue
 
         try:
@@ -200,6 +202,8 @@ def update_plex(
         show_obj = get_show_from_library(plex, show_title)
         if not show_obj:
             logger.debug("Show not found in Plex library: %s", show_title)
+            if mark_episode_watched_discover(plex, show_title, season_num, episode_num, guid=guid):
+                episode_count += 1
             continue
 
         try:
@@ -218,3 +222,107 @@ def update_plex(
         logger.info("Marked %d movies and %d episodes as watched in Plex", movie_count, episode_count)
     else:
         logger.info("Nothing new to send to Plex.")
+
+
+def search_discover(
+    plex,
+    query: str,
+    limit: int = 30,
+    libtype: Optional[str] = None,
+    providers: str = "discover,PLEXAVOD,PLEXTVOD",
+) -> list:
+    """Return results from Plex Discover search."""
+    try:
+        account = plex.account()
+        return account.searchDiscover(
+            query,
+            limit=limit,
+            libtype=libtype,
+            providers=providers,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Discover search failed for %s: %s", query, exc)
+        return []
+
+
+def mark_movie_watched_discover(
+    plex, title: str, year: Optional[int] = None, guid: Optional[str] = None
+) -> bool:
+    """Mark a movie as watched using Plex Discover."""
+
+    queries = []
+    if guid and valid_guid(guid):
+        ids = guid_to_ids(guid)
+        for _val in (ids.get("imdb"), ids.get("tmdb"), ids.get("tvdb"), ids.get("anidb")):
+            if _val:
+                queries.append(str(_val))
+                break
+    queries.append(title)
+
+    for query in queries:
+        for movie in search_discover(plex, query, libtype="movie"):
+            if guid and imdb_guid(movie):
+                movie_guid = _parse_guid_value(imdb_guid(movie))
+                if movie_guid and guid != movie_guid:
+                    continue
+            if year is not None:
+                result_year = normalize_year(getattr(movie, "year", None))
+                if result_year and result_year != normalize_year(year):
+                    continue
+            try:
+                account = plex.account()
+                if not account.isPlayed(movie):
+                    account.markPlayed(movie)
+                return True
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Failed marking discover movie '%s' as watched: %s", title, exc)
+    return False
+
+
+def mark_episode_watched_discover(
+    plex,
+    show_title: str,
+    season: int,
+    episode: int,
+    year: Optional[int] = None,
+    guid: Optional[str] = None,
+) -> bool:
+    """Mark an episode as watched using Plex Discover."""
+
+    queries = []
+    if guid and valid_guid(guid):
+        ids = guid_to_ids(guid)
+        for _val in (ids.get("imdb"), ids.get("tmdb"), ids.get("tvdb"), ids.get("anidb")):
+            if _val:
+                queries.append(str(_val))
+                break
+    queries.append(show_title)
+
+    for query in queries:
+        for show in search_discover(plex, query, libtype="show"):
+            if guid and imdb_guid(show):
+                show_guid = _parse_guid_value(imdb_guid(show))
+                if show_guid and guid != show_guid:
+                    continue
+            if year is not None:
+                result_year = normalize_year(getattr(show, "year", None))
+                if result_year and result_year != normalize_year(year):
+                    continue
+            try:
+                ep_obj = show.episode(season=season, episode=episode)
+            except Exception:
+                continue
+            try:
+                account = plex.account()
+                if not account.isPlayed(ep_obj):
+                    account.markPlayed(ep_obj)
+                return True
+            except Exception as exc:  # noqa: BLE001
+                logger.debug(
+                    "Failed marking discover episode %s S%02dE%02d: %s",
+                    show_title,
+                    season,
+                    episode,
+                    exc,
+                )
+    return False

@@ -15,6 +15,7 @@ The recommended sync interval is **at least 60 minutes**. Shorter intervals gene
 - [Backup and restore](#backup-and-restore)
 - [Live sync](#live-sync)
 - [Getting a Plex token](#getting-a-plex-token)
+- [Getting the Plex username](#getting-the-plex-username)
 - [Getting Trakt API credentials](#getting-trakt-api-credentials)
 - [Running with Docker Compose](#running-with-docker-compose)
 - [Screenshots](#screenshots)
@@ -30,6 +31,7 @@ The application expects the following API credentials:
 
 - `PLEX_BASEURL` – URL of your Plex server, e.g. `http://localhost:32400`.
 - `PLEX_TOKEN` – your Plex authentication token.
+- `PLEX_ACCOUNT` – optional Plex username or account ID to filter history.
 - `TRAKT_CLIENT_ID` – client ID for your Trakt application (optional if only using Simkl).
 - `TRAKT_CLIENT_SECRET` – client secret from your Trakt application (optional if only using Simkl).
 - `SIMKL_CLIENT_ID` – client ID for your Simkl application (optional if only using Trakt).
@@ -86,6 +88,24 @@ the application will trigger an immediate sync whenever an event is received.
 4. Copy the value of `X-Plex-Token` from the URL bar – that's your token.
 5. If you need more details, Plex offers instructions at <https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/>.
 
+## Getting the Plex username
+
+Plex lets you create managed users under your main account. The username of the
+account whose history you want to sync can be found in the **Users & Sharing**
+section of the Plex Web app (\<https://app.plex.tv/desktop>). Managed account
+names appear under **Managed Users**. You can also list the available users via
+`plexapi`:
+
+```python
+from plexapi.myplex import MyPlexAccount
+
+account = MyPlexAccount(token="YOUR_PLEX_TOKEN")
+for user in account.users():
+    print(user.title, user.id)
+```
+
+Use the displayed name (or ID) in the `PLEX_ACCOUNT` variable.
+
 ## Getting Trakt API credentials
 
 1. Log in to your Trakt account and open <https://trakt.tv/oauth/applications>.
@@ -109,6 +129,7 @@ the application will trigger an immediate sync whenever an event is received.
 ```
 PLEX_BASEURL=http://localhost:32400
 PLEX_TOKEN=YOUR_PLEX_TOKEN
+PLEX_ACCOUNT=myusername
 TRAKT_CLIENT_ID=YOUR_TRAKT_CLIENT_ID
 TRAKT_CLIENT_SECRET=YOUR_TRAKT_CLIENT_SECRET
 SIMKL_CLIENT_ID=YOUR_SIMKL_CLIENT_ID

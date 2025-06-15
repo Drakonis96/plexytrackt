@@ -48,7 +48,7 @@ from utils import (
     trakt_episode_key,
     simkl_episode_key,
 )
-from plex_utils import get_plex_history, update_plex, get_user_token
+from plex_utils import get_plex_history, update_plex
 from trakt_utils import (
     load_trakt_tokens,
     save_trakt_tokens,
@@ -1517,12 +1517,7 @@ def sync():
                 if guid not in plex_episode_guids
             }
             try:
-                if PLEX_ACCOUNTS:
-                    for acc in PLEX_ACCOUNTS:
-                        token = get_user_token(plex, acc)
-                        update_plex(plex, missing_movies, missing_episodes, token)
-                else:
-                    update_plex(plex, missing_movies, missing_episodes)
+                update_plex(plex, missing_movies, missing_episodes)
             except Exception as exc:
                 logger.error("Failed updating Plex history: %s", exc)
 
@@ -1646,12 +1641,7 @@ def sync():
                 for e in episodes_to_add_plex
             }
             if movies_to_add_plex_fmt or episodes_to_add_plex_fmt:
-                if PLEX_ACCOUNTS:
-                    for acc in PLEX_ACCOUNTS:
-                        token = get_user_token(plex, acc)
-                        update_plex(plex, movies_to_add_plex_fmt, episodes_to_add_plex_fmt, token)
-                else:
-                    update_plex(plex, movies_to_add_plex_fmt, episodes_to_add_plex_fmt)
+                update_plex(plex, movies_to_add_plex_fmt, episodes_to_add_plex_fmt)
 
             if current_activity:
                 save_last_sync_date(current_activity)
@@ -1933,9 +1923,9 @@ def config_page():
             if provider == "none":
                 stop_scheduler()
             return redirect(url_for("config_page"))
-        if "account" in request.form:
-            selected = request.form.get("account")
-            save_plex_accounts([selected] if selected else [])
+        if "accounts" in request.form:
+            selected = request.form.getlist("accounts")
+            save_plex_accounts(selected)
             return redirect(url_for("config_page"))
     trakt_configured = bool(os.environ.get("TRAKT_ACCESS_TOKEN"))
     simkl_configured = bool(os.environ.get("SIMKL_ACCESS_TOKEN"))

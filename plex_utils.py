@@ -6,6 +6,7 @@ from typing import Dict, Optional, Set, Tuple, List
 import requests
 
 from plexapi.server import PlexServer
+from plexapi.exceptions import Unauthorized
 
 from utils import (
     _parse_guid_value,
@@ -117,7 +118,16 @@ def get_plex_history(plex, accounts: Optional[List[str]] = None) -> Tuple[
         episodes: Dict[str, Dict[str, Optional[str]]] = {}
         show_guid_cache: Dict[str, Optional[str]] = {}
 
-        for entry in server.history():
+        try:
+            history_entries = server.history()
+        except Unauthorized as exc:  # noqa: F841
+            logger.debug("History endpoint unauthorized: %s", exc)
+            history_entries = []
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed to fetch Plex history: %s", exc)
+            history_entries = []
+
+        for entry in history_entries:
             watched_at = to_iso_z(getattr(entry, "viewedAt", None))
 
             if entry.type == "movie":

@@ -29,7 +29,8 @@ from flask import send_file
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.schedulers.base import STATE_STOPPED
 from plexapi.server import PlexServer
-from plexapi.exceptions import BadRequest, NotFound
+from plexapi.myplex import MyPlexAccount
+from plexapi.exceptions import BadRequest, NotFound, Unauthorized, TwoFactorRequired
 
 from utils import (
     to_iso_z,
@@ -127,6 +128,7 @@ SYNC_PROVIDER = "none"  # trakt | simkl | none
 PROVIDER_FILE = "provider.json"
 scheduler = BackgroundScheduler()
 plex = None  # will hold PlexServer instance
+plex_account = None  # will hold MyPlexAccount instance
 
 # --------------------------------------------------------------------------- #
 # TRAKT / SIMKL OAUTH CONSTANTS
@@ -136,6 +138,8 @@ TOKEN_FILE = "trakt_tokens.json"
 
 SIMKL_REDIRECT_URI = os.environ.get("SIMKL_REDIRECT_URI")
 SIMKL_TOKEN_FILE = "simkl_tokens.json"
+
+PLEX_TOKEN_FILE = "plex_user.json"
 
 
 # --------------------------------------------------------------------------- #
@@ -616,6 +620,31 @@ def exchange_code_for_simkl_tokens(code: str) -> Optional[dict]:
     save_simkl_token(data["access_token"])
     logger.info("Simkl token obtained via authorization code")
     return data
+
+
+def load_plex_token() -> None:
+    """Load saved Plex user token into environment."""
+    if os.environ.get("PLEX_TOKEN"):
+        return
+    if os.path.exists(PLEX_TOKEN_FILE):
+        try:
+            with open(PLEX_TOKEN_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            os.environ["PLEX_TOKEN"] = data.get("token", "")
+            os.environ["PLEX_USER"] = data.get("user", "")
+            logger.info("Loaded Plex token from %s", PLEX_TOKEN_FILE)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed to load Plex token: %s", exc)
+
+
+def save_plex_token(token: str, user: str) -> None:
+    """Persist Plex user token to file."""
+    try:
+        with open(PLEX_TOKEN_FILE, "w", encoding="utf-8") as f:
+            json.dump({"token": token, "user": user}, f, indent=2)
+        logger.info("Saved Plex token to %s", PLEX_TOKEN_FILE)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Failed to save Plex token: %s", exc)
 
 
 
@@ -1749,6 +1778,7 @@ def restore_backup(headers, data: dict) -> None:
 def index():
     global SYNC_INTERVAL_MINUTES, SYNC_COLLECTION, SYNC_RATINGS, SYNC_WATCHED, SYNC_LIKED_LISTS, SYNC_WATCHLISTS, LIVE_SYNC
 
+    load_plex_token()
     load_trakt_tokens()
     load_simkl_tokens()
     load_provider()
@@ -1839,6 +1869,7 @@ def simkl_callback():
 @app.route("/config", methods=["GET", "POST"])
 def config_page():
     """Display configuration status for Trakt and Simkl."""
+    load_plex_token()
     load_trakt_tokens()
     load_simkl_tokens()
     load_provider()
@@ -1857,6 +1888,70 @@ def config_page():
         simkl_configured=simkl_configured,
         provider=SYNC_PROVIDER,
     )
+
+
+@app.route("/login", methods=["GET", "POST"])
+def plex_login():
+    """Login to Plex and list available users."""
+    global plex_account
+    error = None
+    username = ""
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        code = request.form.get("code", "").strip() or None
+        try:
+            plex_account = MyPlexAccount(username, password, code=code)
+        except TwoFactorRequired:
+            error = "Two-factor code required"
+            return render_template("login.html", error=error, username=username)
+        except Unauthorized:
+            error = "Invalid Plex credentials"
+            return render_template("login.html", error=error, username=username)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Plex login failed: %s", exc)
+            error = "Plex login failed"
+            return render_template("login.html", error=error, username=username)
+
+        users = [{"id": "account", "title": plex_account.username or "Admin"}]
+        try:
+            for u in plex_account.users():
+                if getattr(u, "home", False):
+                    users.append({"id": str(u.id), "title": u.title})
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed to list Plex users: %s", exc)
+
+        return render_template("plex_users.html", users=users)
+
+    return render_template("login.html", error=error, username=username)
+
+
+@app.route("/login/select", methods=["POST"])
+def plex_select_user():
+    """Select Plex user and save token."""
+    global plex_account, plex
+    if plex_account is None:
+        return redirect(url_for("plex_login"))
+    user_id = request.form.get("user_id")
+    try:
+        if user_id == "account":
+            token = plex_account.authenticationToken
+            user_name = plex_account.username or "admin"
+        else:
+            user_obj = next(u for u in plex_account.users() if str(u.id) == user_id)
+            sub = plex_account.switchHomeUser(user_obj)
+            token = sub.authenticationToken
+            user_name = user_obj.title
+
+        os.environ["PLEX_TOKEN"] = token
+        os.environ["PLEX_USER"] = user_name
+        save_plex_token(token, user_name)
+        plex = PlexServer(os.environ.get("PLEX_BASEURL"), token)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Failed selecting Plex user: %s", exc)
+        return render_template("plex_users.html", users=[{"id": "account", "title": plex_account.username}], error="Failed to select user")
+
+    return redirect(url_for("index"))
 
 
 @app.route("/authorize/<service>", methods=["GET", "POST"])
@@ -1938,6 +2033,7 @@ def stop():
 
 @app.route("/backup")
 def backup_page():
+    load_plex_token()
     message = request.args.get("message")
     mtype = request.args.get("mtype", "success") if message else None
     return render_template("backup.html", message=message, mtype=mtype)
@@ -2017,6 +2113,7 @@ def plex_webhook():
 # --------------------------------------------------------------------------- #
 def test_connections() -> bool:
     global plex
+    load_plex_token()
     plex_baseurl = os.environ.get("PLEX_BASEURL")
     plex_token = os.environ.get("PLEX_TOKEN")
     trakt_token = os.environ.get("TRAKT_ACCESS_TOKEN")
@@ -2128,6 +2225,7 @@ def stop_scheduler():
 # --------------------------------------------------------------------------- #
 if __name__ == "__main__":
     logger.info("Starting PlexyTrackt application")
+    load_plex_token()
     load_trakt_tokens()
     load_simkl_tokens()
     load_provider()

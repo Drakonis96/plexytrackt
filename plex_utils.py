@@ -1,6 +1,9 @@
 import logging
 import os
+import xml.etree.ElementTree as ET
 from typing import Dict, Optional, Set, Tuple, List
+
+import requests
 
 from plexapi.server import PlexServer
 
@@ -17,6 +20,43 @@ from utils import (
 logger = logging.getLogger(__name__)
 
 
+def _get_managed_user_token(admin_token: str, identifier: str) -> Optional[str]:
+    """Return an access token for a managed Plex user via plex.tv."""
+    try:
+        users_url = f"https://plex.tv/api/users?X-Plex-Token={admin_token}"
+        resp = requests.get(users_url, timeout=10)
+        resp.raise_for_status()
+        root = ET.fromstring(resp.content)
+        user_id = None
+        machine_id = None
+        for user in root.findall(".//User"):
+            if identifier in (
+                user.attrib.get("id"),
+                user.attrib.get("title"),
+                user.attrib.get("username"),
+            ):
+                user_id = user.attrib.get("id")
+                server = user.find("Server")
+                if server is not None:
+                    machine_id = server.attrib.get("machineIdentifier")
+                break
+        if not (user_id and machine_id):
+            return None
+
+        shared_url = (
+            f"https://plex.tv/api/servers/{machine_id}/shared_servers?X-Plex-Token={admin_token}"
+        )
+        resp = requests.get(shared_url, timeout=10)
+        resp.raise_for_status()
+        root = ET.fromstring(resp.content)
+        for srv in root.findall(".//SharedServer"):
+            if srv.attrib.get("userID") == str(user_id):
+                return srv.attrib.get("accessToken")
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Managed user token lookup failed: %s", exc)
+    return None
+
+
 def get_user_token(plex, identifier: str) -> Optional[str]:
     """Return an access token for the given Plex user identifier."""
     try:
@@ -25,7 +65,16 @@ def get_user_token(plex, identifier: str) -> Optional[str]:
             return plex._token
         for user in account.users():
             if identifier in (str(user.id), user.title, getattr(user, "username", None)):
-                return user.get_token(plex.machineIdentifier)
+                token = None
+                try:
+                    token = user.get_token(plex.machineIdentifier)
+                except Exception:
+                    logger.debug("PlexAPI token lookup failed for %s", identifier)
+                if not token:
+                    token = _get_managed_user_token(plex._token, str(user.id))
+                return token
+        # Try direct lookup when user wasn't found above
+        return _get_managed_user_token(plex._token, identifier)
     except Exception as exc:  # noqa: BLE001
         logger.error("Failed to get token for Plex user %s: %s", identifier, exc)
     return None

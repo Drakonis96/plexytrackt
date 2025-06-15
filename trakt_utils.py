@@ -12,7 +12,7 @@ from utils import guid_to_ids, normalize_year, to_iso_z, valid_guid, best_guid, 
 logger = logging.getLogger(__name__)
 
 APP_NAME = "PlexyTrack"
-APP_VERSION = "v0.2.8"
+APP_VERSION = "v0.2.7"
 USER_AGENT = f"{APP_NAME} / {APP_VERSION}"
 
 TOKEN_FILE = "trakt_tokens.json"
@@ -579,18 +579,8 @@ def sync_collections_to_trakt(plex, headers):
                     logger.error("Failed updating list %s: %s", slug, exc)
 
 
-def sync_watchlist(plex, headers, plex_history, trakt_history, token=None):
-    """Synchronize watchlists using the selected Plex account."""
-    account_server = plex
-    if token:
-        plex_baseurl = os.environ.get("PLEX_BASEURL")
-        try:
-            account_server = PlexServer(plex_baseurl, token)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Failed to connect to Plex as %s: %s", token, exc)
-            account_server = plex
-
-    account = account_server.myPlexAccount()
+def sync_watchlist(plex, headers, plex_history, trakt_history):
+    account = plex.myPlexAccount()
     try:
         plex_watch = account.watchlist()
     except Exception as exc:
@@ -652,7 +642,7 @@ def sync_watchlist(plex, headers, plex_history, trakt_history, token=None):
                 guid = f"tmdb://{ids['tmdb']}"
             if not guid or guid in plex_guids:
                 continue
-            item = find_item_by_guid(account_server, guid)
+            item = find_item_by_guid(plex, guid)
             if item:
                 add_to_plex.append(item)
     if add_to_plex:
@@ -665,7 +655,7 @@ def sync_watchlist(plex, headers, plex_history, trakt_history, token=None):
     for guid in list(plex_guids):
         if guid in trakt_history or guid in plex_history:
             try:
-                item = find_item_by_guid(account_server, guid)
+                item = find_item_by_guid(plex, guid)
                 if item:
                     account.removeFromWatchlist([item])
             except Exception:

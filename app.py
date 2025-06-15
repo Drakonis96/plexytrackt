@@ -1953,17 +1953,19 @@ def plex_select_user():
     user_id = request.form.get("user_id")
     try:
         if user_id == "account":
+            sub = plex_account
             user_name = plex_account.username or "admin"
             account_id = plex_account.id
         else:
             user_obj = next(u for u in plex_account.users() if str(u.id) == user_id)
+            sub = plex_account.switchHomeUser(user_obj)
             user_name = user_obj.title
             account_id = user_obj.id
 
         baseurl = os.environ.get("PLEX_BASEURL", "").rstrip("/")
         parsed = urlparse(baseurl)
         server_resource = None
-        for res in plex_account.resources():
+        for res in sub.resources():
             if "server" not in res.provides:
                 continue
             for conn in res.connections:
@@ -1980,7 +1982,7 @@ def plex_select_user():
             plex = server_resource.connect()
             token = plex._token
         else:
-            token = plex_account.authenticationToken
+            token = sub.authenticationToken
             plex = PlexServer(baseurl, token)
 
         os.environ["PLEX_TOKEN"] = token

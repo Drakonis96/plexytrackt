@@ -77,7 +77,7 @@
                 <form method="post" class="user-form">
                     {% for uid, name in plex_users %}
                     <div class="checkbox-group">
-                        <input type="checkbox" id="user_{{ uid }}" name="accounts" value="{{ uid }}" {% if not selected_users or uid in selected_users %}checked{% endif %}>
+                        <input type="radio" id="user_{{ uid }}" name="account" value="{{ uid }}" {% if uid in selected_users %}checked{% endif %}>
                         <label for="user_{{ uid }}">{{ name }}</label>
                     </div>
                     {% endfor %}

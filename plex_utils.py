@@ -1,5 +1,8 @@
 import logging
+import os
 from typing import Dict, Optional, Set, Tuple, List
+
+from plexapi.server import PlexServer
 
 from utils import (
     _parse_guid_value,
@@ -33,127 +36,139 @@ def get_plex_history(plex, accounts: Optional[List[str]] = None) -> Tuple[
     Dict[str, Dict[str, Optional[str]]],
 ]:
     """Return watched movies and episodes from Plex keyed by GUID."""
-    movies: Dict[str, Dict[str, Optional[str]]] = {}
-    episodes: Dict[str, Dict[str, Optional[str]]] = {}
-    show_guid_cache: Dict[str, Optional[str]] = {}
+
+    def _extract(server) -> Tuple[
+        Dict[str, Dict[str, Optional[str]]],
+        Dict[str, Dict[str, Optional[str]]],
+    ]:
+        movies: Dict[str, Dict[str, Optional[str]]] = {}
+        episodes: Dict[str, Dict[str, Optional[str]]] = {}
+        show_guid_cache: Dict[str, Optional[str]] = {}
+
+        for entry in server.history():
+            watched_at = to_iso_z(getattr(entry, "viewedAt", None))
+
+            if entry.type == "movie":
+                try:
+                    item = entry.source() or server.fetchItem(entry.ratingKey)
+                except Exception as exc:
+                    logger.debug(
+                        "Failed to fetch movie %s from Plex: %s", entry.ratingKey, exc
+                    )
+                    continue
+                title = item.title
+                year = normalize_year(getattr(item, "year", None))
+                guid = imdb_guid(item)
+                if not guid:
+                    continue
+                if guid not in movies:
+                    movies[guid] = {
+                        "title": title,
+                        "year": year,
+                        "watched_at": watched_at,
+                        "guid": guid,
+                    }
+            elif entry.type == "episode":
+                season = getattr(entry, "parentIndex", None)
+                number = getattr(entry, "index", None)
+                show = getattr(entry, "grandparentTitle", None)
+                try:
+                    item = entry.source() or server.fetchItem(entry.ratingKey)
+                except Exception as exc:
+                    logger.debug(
+                        "Failed to fetch episode %s from Plex: %s", entry.ratingKey, exc
+                    )
+                    item = None
+                if item:
+                    season = season or item.seasonNumber
+                    number = number or item.index
+                    show = show or item.grandparentTitle
+                    guid = imdb_guid(item)
+                else:
+                    guid = None
+                if None in (season, number, show):
+                    continue
+                code = f"S{int(season):02d}E{int(number):02d}"
+
+                series_guid: Optional[str] = None
+                if item is not None:
+                    gp_guid_raw = getattr(item, "grandparentGuid", None)
+                    if gp_guid_raw:
+                        series_guid = _parse_guid_value(gp_guid_raw)
+                if series_guid is None and show in show_guid_cache:
+                    series_guid = show_guid_cache[show]
+                if series_guid is None and show:
+                    series_obj = get_show_from_library(server, show)
+                    series_guid = imdb_guid(series_obj) if series_obj else None
+                    show_guid_cache[show] = series_guid
+
+                if guid and valid_guid(guid) and guid not in episodes:
+                    episodes[guid] = {
+                        "show": show,
+                        "code": code,
+                        "watched_at": watched_at,
+                        "guid": guid,
+                    }
+
+        logger.info("Fetching watched flags from Plex library…")
+        for section in server.library.sections():
+            try:
+                if section.type == "movie":
+                    for item in section.search(viewCount__gt=0):
+                        title = item.title
+                        year = normalize_year(getattr(item, "year", None))
+                        guid = imdb_guid(item)
+                        if guid and guid not in movies:
+                            movies[guid] = {
+                                "title": title,
+                                "year": year,
+                                "watched_at": to_iso_z(getattr(item, "lastViewedAt", None)),
+                                "guid": guid,
+                            }
+                elif section.type == "show":
+                    for ep in section.searchEpisodes(viewCount__gt=0):
+                        code = f"S{int(ep.seasonNumber):02d}E{int(ep.episodeNumber):02d}"
+                        guid = imdb_guid(ep)
+                        show_title = getattr(ep, "grandparentTitle", None)
+                        if guid and guid not in episodes:
+                            episodes[guid] = {
+                                "show": show_title,
+                                "code": code,
+                                "watched_at": to_iso_z(getattr(ep, "lastViewedAt", None)),
+                                "guid": guid,
+                            }
+            except Exception as exc:
+                logger.debug(
+                    "Failed fetching watched items from section %s: %s",
+                    section.title,
+                    exc,
+                )
+
+        return movies, episodes
 
     logger.info("Fetching Plex history…")
-    account_ids: List[int] = []
+    plex_baseurl = os.environ.get("PLEX_BASEURL")
     if accounts:
+        all_movies: Dict[str, Dict[str, Optional[str]]] = {}
+        all_episodes: Dict[str, Dict[str, Optional[str]]] = {}
         for acc in accounts:
-            try:
-                account_ids.append(int(acc))
-            except ValueError:
-                try:
-                    user = plex.myPlexAccount().user(acc)
-                    if hasattr(user, "id"):
-                        account_ids.append(int(user.id))
-                except Exception as exc:  # noqa: BLE001
-                    logger.error("Failed to resolve Plex account %s: %s", acc, exc)
-
-    def iter_history():
-        if account_ids:
-            for aid in account_ids:
-                for en in plex.history(accountID=aid):
-                    yield en
-        else:
-            for en in plex.history():
-                yield en
-
-    for entry in iter_history():
-        watched_at = to_iso_z(getattr(entry, "viewedAt", None))
-
-        if entry.type == "movie":
-            try:
-                item = entry.source() or plex.fetchItem(entry.ratingKey)
-            except Exception as exc:
-                logger.debug("Failed to fetch movie %s from Plex: %s", entry.ratingKey, exc)
+            token = get_user_token(plex, acc)
+            if not token:
+                logger.warning("Token for Plex user %s not found; skipping", acc)
                 continue
-            title = item.title
-            year = normalize_year(getattr(item, "year", None))
-            guid = imdb_guid(item)
-            if not guid:
-                continue
-            if guid not in movies:
-                movies[guid] = {
-                    "title": title,
-                    "year": year,
-                    "watched_at": watched_at,
-                    "guid": guid,
-                }
-        elif entry.type == "episode":
-            season = getattr(entry, "parentIndex", None)
-            number = getattr(entry, "index", None)
-            show = getattr(entry, "grandparentTitle", None)
             try:
-                item = entry.source() or plex.fetchItem(entry.ratingKey)
-            except Exception as exc:
-                logger.debug("Failed to fetch episode %s from Plex: %s", entry.ratingKey, exc)
-                item = None
-            if item:
-                season = season or item.seasonNumber
-                number = number or item.index
-                show = show or item.grandparentTitle
-                guid = imdb_guid(item)
-            else:
-                guid = None
-            if None in (season, number, show):
+                user_server = PlexServer(plex_baseurl, token)
+            except Exception as exc:  # noqa: BLE001
+                logger.error("Failed to connect to Plex as %s: %s", acc, exc)
                 continue
-            code = f"S{int(season):02d}E{int(number):02d}"
+            movies, episodes = _extract(user_server)
+            for k, v in movies.items():
+                all_movies.setdefault(k, v)
+            for k, v in episodes.items():
+                all_episodes.setdefault(k, v)
+        return all_movies, all_episodes
 
-            series_guid: Optional[str] = None
-            if item is not None:
-                gp_guid_raw = getattr(item, "grandparentGuid", None)
-                if gp_guid_raw:
-                    series_guid = _parse_guid_value(gp_guid_raw)
-            if series_guid is None and show in show_guid_cache:
-                series_guid = show_guid_cache[show]
-            if series_guid is None and show:
-                series_obj = get_show_from_library(plex, show)
-                series_guid = imdb_guid(series_obj) if series_obj else None
-                show_guid_cache[show] = series_guid
-
-            # Only store episodes with individual episode GUIDs (like previous version)
-            if guid and valid_guid(guid) and guid not in episodes:
-                episodes[guid] = {
-                    "show": show,
-                    "code": code,
-                    "watched_at": watched_at,
-                    "guid": guid,
-                }
-
-    logger.info("Fetching watched flags from Plex library…")
-    for section in plex.library.sections():
-        try:
-            if section.type == "movie":
-                for item in section.search(viewCount__gt=0):
-                    title = item.title
-                    year = normalize_year(getattr(item, "year", None))
-                    guid = imdb_guid(item)
-                    if guid and guid not in movies:
-                        movies[guid] = {
-                            "title": title,
-                            "year": year,
-                            "watched_at": to_iso_z(getattr(item, "lastViewedAt", None)),
-                            "guid": guid,
-                        }
-            elif section.type == "show":
-                for ep in section.searchEpisodes(viewCount__gt=0):
-                    code = f"S{int(ep.seasonNumber):02d}E{int(ep.episodeNumber):02d}"
-                    guid = imdb_guid(ep)
-                    show_title = getattr(ep, "grandparentTitle", None)
-                    # Only store episodes with individual episode GUIDs (like previous version)
-                    if guid and guid not in episodes:
-                        episodes[guid] = {
-                            "show": show_title,
-                            "code": code,
-                            "watched_at": to_iso_z(getattr(ep, "lastViewedAt", None)),
-                            "guid": guid,
-                        }
-        except Exception as exc:
-            logger.debug("Failed fetching watched items from section %s: %s", section.title, exc)
-
-    return movies, episodes
+    return _extract(plex)
 
 
 def update_plex(

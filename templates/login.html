@@ -56,11 +56,21 @@
 
             {% if users %}
             <section class="card">
-                <h2>Select Plex User</h2>
+                <h2>Select Plex Server &amp; User</h2>
                 {% if error_select %}
                 <div class="status-message error">{{ error_select }}</div>
                 {% endif %}
                 <form method="post" action="{{ url_for('plex_select_user') }}" class="provider-form">
+                    {% if servers %}
+                    <div class="provider-toggle">
+                        {% for srv in servers %}
+                        <label>
+                            <input type="radio" name="server_id" value="{{ srv.id }}" {% if loop.first %}checked{% endif %}>
+                            {{ srv.name }}
+                        </label>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
                     <div class="provider-toggle">
                         {% for user in users %}
                         <label>

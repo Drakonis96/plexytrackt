@@ -1937,8 +1937,26 @@ def plex_login():
         except Exception as exc:  # noqa: BLE001
             logger.error("Failed to list Plex users: %s", exc)
 
+        servers: List[dict] = []
+        try:
+            for res in plex_account.resources():
+                if "server" in res.provides:
+                    servers.append(
+                        {
+                            "id": res.clientIdentifier,
+                            "name": res.name,
+                            "uri": res.connections[0].uri,
+                        }
+                    )
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed to list Plex servers: %s", exc)
+
         return render_template(
-            "login.html", users=users, username=username, error=error
+            "login.html",
+            users=users,
+            servers=servers,
+            username=username,
+            error=error,
         )
 
     return render_template("login.html", error=error, username=username, logged_in=False)
@@ -1951,6 +1969,7 @@ def plex_select_user():
     if plex_account is None:
         return redirect(url_for("plex_login"))
     user_id = request.form.get("user_id")
+    server_id = request.form.get("server_id")
     try:
         if user_id == "account":
             sub = plex_account
@@ -1968,10 +1987,16 @@ def plex_select_user():
         for res in sub.resources():
             if "server" not in res.provides:
                 continue
+            if server_id and res.clientIdentifier == server_id:
+                server_resource = res
+                break
             for conn in res.connections:
-                if urlparse(conn.uri).hostname == parsed.hostname and (
-                    (urlparse(conn.uri).port or (443 if parsed.scheme == "https" else 80))
-                    == (parsed.port or (443 if parsed.scheme == "https" else 80))
+                if (
+                    urlparse(conn.uri).hostname == parsed.hostname
+                    and (
+                        (urlparse(conn.uri).port or (443 if parsed.scheme == "https" else 80))
+                        == (parsed.port or (443 if parsed.scheme == "https" else 80))
+                    )
                 ):
                     server_resource = res
                     break
@@ -1981,9 +2006,22 @@ def plex_select_user():
         if server_resource:
             plex = server_resource.connect()
             token = plex._token
+            os.environ["PLEX_BASEURL"] = plex._baseurl.rstrip("/")
         else:
-            token = sub.authenticationToken
-            plex = PlexServer(baseurl, token)
+            # Fall back to any available server resource when the configured
+            # base URL does not match a resource. This ensures the correct
+            # server token is used instead of the generic account token which
+            # can lead to 401 errors.
+            alt_resource = next(
+                (r for r in sub.resources() if "server" in r.provides), None
+            )
+            if alt_resource:
+                plex = alt_resource.connect()
+                token = plex._token
+                os.environ["PLEX_BASEURL"] = plex._baseurl.rstrip("/")
+            else:
+                token = sub.authenticationToken
+                plex = PlexServer(baseurl, token)
 
         os.environ["PLEX_TOKEN"] = token
         os.environ["PLEX_USER"] = user_name

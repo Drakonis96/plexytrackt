@@ -10,7 +10,7 @@ from utils import guid_to_ids, normalize_year, simkl_episode_key, to_iso_z
 logger = logging.getLogger(__name__)
 
 APP_NAME = "PlexyTrack"
-APP_VERSION = "v0.2.7"
+APP_VERSION = "v0.2.8"
 USER_AGENT = f"{APP_NAME} / {APP_VERSION}"
 
 SIMKL_TOKEN_FILE = "simkl_tokens.json"

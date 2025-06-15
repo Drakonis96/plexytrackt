@@ -1014,6 +1014,186 @@ def update_simkl(
 # --------------------------------------------------------------------------- #
 # PLEX ↔ TRAKT
 # --------------------------------------------------------------------------- #
+def get_plex_history(plex, accounts: Optional[List[str]] = None) -> Tuple[
+    Dict[str, Dict[str, Optional[str]]],
+    Dict[str, Dict[str, Optional[str]]],
+]:
+    """Return watched movies and episodes from Plex keyed by IMDb or TMDb GUID."""
+    movies: Dict[str, Dict[str, Optional[str]]] = {}
+    episodes: Dict[str, Dict[str, Optional[str]]] = {}
+    # Cache para no abrir la biblioteca en cada episodio cuando necesitamos el GUID de la serie
+    show_guid_cache: Dict[str, Optional[str]] = {}
+
+    logger.info("Fetching Plex history…")
+    account_ids: List[int] = []
+    if accounts:
+        for acc in accounts:
+            try:
+                account_ids.append(int(acc))
+            except ValueError:
+                try:
+                    user = plex.myPlexAccount().user(acc)
+                    if hasattr(user, "id"):
+                        account_ids.append(int(user.id))
+                except Exception as exc:  # noqa: BLE001
+                    logger.error("Failed to resolve Plex account %s: %s", acc, exc)
+
+    def iter_history():
+        if account_ids:
+            for aid in account_ids:
+                for en in plex.history(accountID=aid):
+                    yield en
+        else:
+            for en in plex.history():
+                yield en
+
+    for entry in iter_history():
+        watched_at = to_iso_z(getattr(entry, "viewedAt", None))
+
+        # Movies
+        if entry.type == "movie":
+            try:
+                item = entry.source() or plex.fetchItem(entry.ratingKey)
+            except Exception as exc:
+                logger.debug(
+                    "Failed to fetch movie %s from Plex: %s", entry.ratingKey, exc
+                )
+                continue
+
+            title = item.title
+            year = normalize_year(getattr(item, "year", None))
+            guid = imdb_guid(item)
+            if not guid:
+                continue
+            if guid not in movies:
+                movies[guid] = {
+                    "title": title,
+                    "year": year,
+                    "watched_at": watched_at,
+                    "guid": guid,
+                }
+
+        # Episodes
+        elif entry.type == "episode":
+            season = getattr(entry, "parentIndex", None)
+            number = getattr(entry, "index", None)
+            show = getattr(entry, "grandparentTitle", None)
+            try:
+                item = entry.source() or plex.fetchItem(entry.ratingKey)
+            except Exception as exc:
+                logger.debug(
+                    "Failed to fetch episode %s from Plex: %s", entry.ratingKey, exc
+                )
+                item = None
+            if item:
+                season = season or item.seasonNumber
+                number = number or item.index
+                show = show or item.grandparentTitle
+                guid = imdb_guid(item)
+            else:
+                guid = None
+            if None in (season, number, show):
+                continue
+            code = f"S{int(season):02d}E{int(number):02d}"
+
+            # ------------------- Determinar clave normalizada ------------------- #
+
+            # Preferimos usar GUID de serie + codigo para coincidir con Simkl.
+            series_guid: Optional[str] = None
+
+            # (1) GUID directo desde el episodio
+            if item is not None:
+                gp_guid_raw = getattr(item, "grandparentGuid", None)
+                if gp_guid_raw:
+                    series_guid = _parse_guid_value(gp_guid_raw)
+
+            # (2) consulta a la cache
+            if series_guid is None and show in show_guid_cache:
+                series_guid = show_guid_cache[show]
+
+            # (3) busqueda en biblioteca si todavia no tenemos GUID
+            if series_guid is None and show:
+                series_obj = get_show_from_library(plex, show)
+                series_guid = imdb_guid(series_obj) if series_obj else None
+                show_guid_cache[show] = series_guid
+
+            if series_guid and valid_guid(series_guid):
+                key = (series_guid, code)
+            elif guid:
+                key = guid
+            else:
+                key = (show.lower() if show else "", code)
+            if key not in episodes:
+                episodes[key] = {
+                    "show": show,
+                    "code": code,
+                    "watched_at": watched_at,
+                    "guid": guid,  # puede ser None cuando no hay GUID
+                }
+
+    logger.info("Fetching watched flags from Plex library…")
+    for section in plex.library.sections():
+        try:
+            if section.type == "movie":
+                for item in section.search(viewCount__gt=0):
+                    title = item.title
+                    year = normalize_year(getattr(item, "year", None))
+                    guid = imdb_guid(item)
+                    if guid and guid not in movies:
+                        movies[guid] = {
+                            "title": title,
+                            "year": year,
+                            "watched_at": to_iso_z(getattr(item, "lastViewedAt", None)),
+                            "guid": guid,
+                        }
+            elif section.type == "show":
+                for ep in section.searchEpisodes(viewCount__gt=0):
+                    code = f"S{int(ep.seasonNumber):02d}E{int(ep.episodeNumber):02d}"
+                    guid = imdb_guid(ep)
+                    show_title = getattr(ep, "grandparentTitle", None)
+
+                    key: Union[str, Tuple[str, str]]
+                    if guid:
+                        key = guid
+                    else:
+                        series_guid: Optional[str] = None
+
+                        # (1) From episode's grandparentGuid
+                        gp_guid_raw = getattr(ep, "grandparentGuid", None)
+                        if gp_guid_raw:
+                            series_guid = _parse_guid_value(gp_guid_raw)
+
+                        # (2) From cache
+                        if series_guid is None and show_title and show_title in show_guid_cache:
+                            series_guid = show_guid_cache[show_title]
+
+                        # (3) From library search if still no GUID
+                        if series_guid is None and show_title:
+                            series_obj = get_show_from_library(plex, show_title)
+                            series_guid = (
+                                imdb_guid(series_obj) if series_obj else None
+                            )
+                            show_guid_cache[show_title] = series_guid
+
+                        # Key composition
+                        if series_guid and valid_guid(series_guid):
+                            key = (series_guid, code)
+                        else:
+                            key = (show_title.lower() if show_title else "", code)
+
+                    if key not in episodes:
+                        episodes[key] = {
+                            "show": show_title,
+                            "code": code,
+                            "watched_at": to_iso_z(getattr(ep, "lastViewedAt", None)),
+                            "guid": guid,
+                        }
+        except Exception as exc:
+            logger.debug(
+                "Failed fetching watched items from section %s: %s", section.title, exc
+            )
+
+    return movies, episodes
 
 
 def get_trakt_history_basic(

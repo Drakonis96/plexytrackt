@@ -127,10 +127,6 @@ SYNC_PROVIDER = "none"  # trakt | simkl | none
 PROVIDER_FILE = "provider.json"
 scheduler = BackgroundScheduler()
 plex = None  # will hold PlexServer instance
-USERS_FILE = "plex_users.json"
-PLEX_ACCOUNTS: List[str] = [
-    a.strip() for a in os.environ.get("PLEX_ACCOUNT", "").split(",") if a.strip()
-]
 
 # --------------------------------------------------------------------------- #
 # TRAKT / SIMKL OAUTH CONSTANTS
@@ -166,52 +162,6 @@ def save_provider(provider: str) -> None:
             json.dump({"provider": provider}, f, indent=2)
     except Exception as exc:  # noqa: BLE001
         logger.error("Failed to save provider: %s", exc)
-
-
-def load_plex_accounts() -> None:
-    """Load selected Plex users from file or env."""
-    global PLEX_ACCOUNTS
-    if os.path.exists(USERS_FILE):
-        try:
-            with open(USERS_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            PLEX_ACCOUNTS = data.get("accounts", []) or []
-            return
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Failed to load Plex users: %s", exc)
-    # Fallback to environment variable
-    PLEX_ACCOUNTS = [
-        a.strip() for a in os.environ.get("PLEX_ACCOUNT", "").split(",") if a.strip()
-    ]
-
-
-def save_plex_accounts(accounts: List[str]) -> None:
-    """Persist selected Plex users to file."""
-    global PLEX_ACCOUNTS
-    PLEX_ACCOUNTS = accounts
-    try:
-        with open(USERS_FILE, "w", encoding="utf-8") as f:
-            json.dump({"accounts": accounts}, f, indent=2)
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Failed to save Plex users: %s", exc)
-
-
-def list_plex_users() -> List[Tuple[str, str]]:
-    """Return available Plex user IDs and names."""
-    plex_baseurl = os.environ.get("PLEX_BASEURL")
-    plex_token = os.environ.get("PLEX_TOKEN")
-    if not plex_baseurl or not plex_token:
-        return []
-    try:
-        server = PlexServer(plex_baseurl, plex_token)
-        account = server.myPlexAccount()
-        users = [(str(account.id), account.username)]
-        for user in account.users():
-            users.append((str(user.id), user.title))
-        return users
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Failed to list Plex users: %s", exc)
-        return []
 
 
 # --------------------------------------------------------------------------- #
@@ -1014,7 +964,7 @@ def update_simkl(
 # --------------------------------------------------------------------------- #
 # PLEX ↔ TRAKT
 # --------------------------------------------------------------------------- #
-def get_plex_history(plex, accounts: Optional[List[str]] = None) -> Tuple[
+def get_plex_history(plex) -> Tuple[
     Dict[str, Dict[str, Optional[str]]],
     Dict[str, Dict[str, Optional[str]]],
 ]:
@@ -1025,29 +975,7 @@ def get_plex_history(plex, accounts: Optional[List[str]] = None) -> Tuple[
     show_guid_cache: Dict[str, Optional[str]] = {}
 
     logger.info("Fetching Plex history…")
-    account_ids: List[int] = []
-    if accounts:
-        for acc in accounts:
-            try:
-                account_ids.append(int(acc))
-            except ValueError:
-                try:
-                    user = plex.myPlexAccount().user(acc)
-                    if hasattr(user, "id"):
-                        account_ids.append(int(user.id))
-                except Exception as exc:  # noqa: BLE001
-                    logger.error("Failed to resolve Plex account %s: %s", acc, exc)
-
-    def iter_history():
-        if account_ids:
-            for aid in account_ids:
-                for en in plex.history(accountID=aid):
-                    yield en
-        else:
-            for en in plex.history():
-                yield en
-
-    for entry in iter_history():
+    for entry in plex.history():
         watched_at = to_iso_z(getattr(entry, "viewedAt", None))
 
         # Movies
@@ -1438,7 +1366,7 @@ def sync():
             "simkl-api-key": os.environ["SIMKL_CLIENT_ID"],
         }
 
-    plex_movies, plex_episodes = get_plex_history(plex, PLEX_ACCOUNTS)
+    plex_movies, plex_episodes = get_plex_history(plex)
     logger.info(
         "Found %d movies and %d episodes in Plex history.",
         len(plex_movies),
@@ -1914,19 +1842,13 @@ def config_page():
     load_trakt_tokens()
     load_simkl_tokens()
     load_provider()
-    load_plex_accounts()
-    plex_users = list_plex_users()
     if request.method == "POST":
-        if "provider" in request.form:
-            provider = request.form.get("provider", "none")
-            save_provider(provider)
-            if provider == "none":
-                stop_scheduler()
-            return redirect(url_for("config_page"))
-        if "accounts" in request.form:
-            selected = request.form.getlist("accounts")
-            save_plex_accounts(selected)
-            return redirect(url_for("config_page"))
+        provider = request.form.get("provider", "none")
+        save_provider(provider)
+        if provider == "none":
+            stop_scheduler()
+        # Removed automatic scheduler start - only manual start from sync tab
+        return redirect(url_for("config_page"))
     trakt_configured = bool(os.environ.get("TRAKT_ACCESS_TOKEN"))
     simkl_configured = bool(os.environ.get("SIMKL_ACCESS_TOKEN"))
     return render_template(
@@ -1934,8 +1856,6 @@ def config_page():
         trakt_configured=trakt_configured,
         simkl_configured=simkl_configured,
         provider=SYNC_PROVIDER,
-        plex_users=plex_users,
-        selected_users=PLEX_ACCOUNTS,
     )
 
 
